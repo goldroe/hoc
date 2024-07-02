@@ -24,12 +24,13 @@
 *.lai
 *.la
 *.a
-*.lib
 
 # Executables
 *.exe
 *.out
 *.app
+
+*.tlog
 
 # Visual Studio
 *.sln
