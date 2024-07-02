@@ -29,6 +29,7 @@
 *.exe
 *.out
 *.app
+*.pdb
 
 *.tlog
 
