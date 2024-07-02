@@ -36,4 +36,6 @@
 # Visual Studio
 *.sln
 .vs
+
 bin
+TAGS
