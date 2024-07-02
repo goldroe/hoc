@@ -1,0 +1,55 @@
+foo :: (a: int, b: int) -> int {
+  result := 0;
+  result = a + b;
+  return result;
+}
+
+factorial :: (n: int) -> int {
+    if n == 1 return 1;
+    return n * factorial(n - 1);
+}
+
+main :: (argc: int, argv: ^^char) -> int {
+    fact := factorial(10);
+    return 0;
+}
+
+Let's say goodbye with a smile, dear
+Just for a while dear we must part
+Don't let this parting upset you
+I'll not forget you, sweetheart
+
+We'll meet again
+Don't know where
+Don't know when
+But I know we'll meet again some sunny day
+
+Keep smiling through
+Just like you always do
+'Til the blue skies chase those dark clouds far away
+
+And I will just say hello
+To the folks that you know
+Tell them you won't be long
+
+They'll be happy to know
+That as I saw you go
+You were singing this song
+
+We'll meet again
+Don't know where
+Don't know when
+But I know we'll meet again some sunny day
+
+And I will just say hello
+To the folks that you know
+Tell them you won't be long
+
+They'll be happy to know
+That as I saw you go
+You were singing this song
+
+We'll meet again
+Don't know where
+Don't know when
+But I know we'll meet again some sunny day
