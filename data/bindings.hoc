@@ -1,0 +1,27 @@
+"default" = {
+    { "quit_hoc", "F4", "Alt" },
+    { "previous_line", "Up" },
+    { "next_line", "Down" },
+    { "backward_char", "Left" },
+    { "forward_char", "Right" },
+    { "backward_word", "Left", "Control" },
+    { "forward_word", "Right", "Control" },
+
+    { "newline", "Enter" },
+    { "backward_delete_char", "Backspace" },
+    { "forward_delete_char", "Delete" },
+    { "backward_delete_word", "Backspace", "Control" },
+    { "forward_delete_word", "Delete", "Control" },
+
+    { "goto_beginning_of_line", "Home" },
+    { "goto_end_of_line", "End" },
+    { "goto_first_line", "Comma", "Alt", "Shift" },
+    { "goto_last_line", "Period", "Alt", "Shift" },
+
+    // { "open_line", "O", "Alt" },
+    { "save_buffer", "S", "Control" },
+
+    { "find_file", "O", "Control" }
+
+    // { "", "" }
+}
