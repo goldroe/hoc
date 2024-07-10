@@ -123,7 +123,7 @@ internal String8 path_current_dir(Arena *arena) {
     DWORD length = GetCurrentDirectoryA(0, NULL);
     u8 *buffer = (u8 *)arena_push(arena, length + 1);
     DWORD ret = GetCurrentDirectoryA(length, (LPSTR)buffer);
-    String8 result = str8(buffer, length);
+    String8 result = str8(buffer, (u64)ret);
     return result;
 }
 #elif defined(__linux__)

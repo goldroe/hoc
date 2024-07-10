@@ -1,7 +1,7 @@
 #include "lexer.h"
 
 internal Lexer make_lexer(String8 file_name) {
-    OS_Handle file_handle = os_open_file(file_name);
+    OS_Handle file_handle = os_open_file(file_name, OS_ACCESS_READ);
     String8 file_string = os_read_file_string(file_handle);
     os_close_handle(file_handle);
     Lexer lexer{};

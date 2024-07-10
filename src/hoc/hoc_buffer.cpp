@@ -125,42 +125,44 @@ internal Line_Ending detect_line_ending(String8 string) {
     return LINE_ENDING_LF;
 }
 
-internal Buffer *make_buffer(String8 file_name) {
-    Buffer *buffer = new Buffer();
+internal void buffer_init_contents(Buffer *buffer, String8 file_name, String8 string) {
+    buffer->file_path = path_strip_dir_name(arena_alloc(get_malloc_allocator(), file_name.count + 1), file_name);
+    printf("dir_name: %s\n", buffer->file_path.data);
     buffer->file_name = file_name;
-    buffer->gap_start = 0;
-    buffer->gap_end = DEFAULT_GAP_SIZE;
-    buffer->end = buffer->gap_end;
-    buffer->text = (u8 *)malloc(buffer->end);
-    buffer_update_line_starts(buffer);
-    buffer->line_ending = LINE_ENDING_LF;
-    return buffer;
-}
-
-internal Buffer *make_buffer_from_file(String8 file_name) {
-    OS_Handle handle = os_open_file(file_name);
-    u8 *file_data = nullptr;
-    u64 file_size = os_read_entire_file(handle, (void **)&file_data);
-    os_close_handle(handle);
-    assert(file_data);
-
-    String8 buffer_string = {file_data, file_size};
-    Line_Ending line_ending = detect_line_ending(buffer_string);
-    if (line_ending != LINE_ENDING_LF) {
-        String8 adjusted{};
-        remove_crlf(buffer_string.data, buffer_string.count, &adjusted.data, &adjusted.count);
-        free(file_data);
-        buffer_string = adjusted;
-    }
-
-    Buffer *buffer = new Buffer();
-    buffer->file_name = file_name;
-    buffer->text = buffer_string.data;
+    buffer->text = string.data;
     buffer->gap_start = 0;
     buffer->gap_end = 0;
-    buffer->end = buffer_string.count;
-    buffer->line_ending = line_ending;
+    buffer->end = string.count;
+    buffer->line_ending = LINE_ENDING_LF;
     buffer_update_line_starts(buffer);
+}
+
+internal Buffer *make_buffer(String8 file_name) {
+    Buffer *buffer = new Buffer();
+    OS_Handle handle = os_open_file(file_name, OS_ACCESS_READ);
+    if (os_valid_handle(handle)) {
+        u8 *file_data = nullptr;
+        u64 file_size = os_read_entire_file(handle, (void **)&file_data);
+        os_close_handle(handle);
+        assert(file_data);
+
+        String8 buffer_string = {file_data, file_size};
+        Line_Ending line_ending = detect_line_ending(buffer_string);
+        if (line_ending != LINE_ENDING_LF) {
+            String8 adjusted{};
+            remove_crlf(buffer_string.data, buffer_string.count, &adjusted.data, &adjusted.count);
+            free(file_data);
+            buffer_string = adjusted;
+        }
+        buffer_init_contents(buffer, file_name, buffer_string);
+        buffer->line_ending = line_ending;
+    } else {
+        String8 string = str8_zero();
+        string.data = (u8 *)malloc(buffer->end);
+        string.count = DEFAULT_GAP_SIZE;
+        buffer_init_contents(buffer, file_name, string);
+        buffer->line_ending = LINE_ENDING_LF;
+    }
     return buffer;
 }
 

@@ -67,8 +67,23 @@ internal v2 os_get_window_dim(OS_Handle window_handle) {
     return result;
 }
 
-internal OS_Handle os_open_file(String8 file_name) {
-    HANDLE file_handle = CreateFileA((LPCSTR)file_name.data, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+internal bool os_valid_handle(OS_Handle handle) {
+    bool result = (HANDLE)handle != INVALID_HANDLE_VALUE;
+    return result;
+}
+
+internal OS_Handle os_open_file(String8 file_name, OS_Access_Flags flags) {
+    DWORD access = 0, shared = 0, creation = 0;
+    if (flags & OS_ACCESS_READ)    access  |= GENERIC_READ;
+    if (flags & OS_ACCESS_WRITE)   access  |= GENERIC_WRITE;
+    if (flags & OS_ACCESS_EXECUTE) access  |= GENERIC_EXECUTE;
+    if (flags & OS_ACCESS_READ)    shared   = FILE_SHARE_READ;
+    if (flags & OS_ACCESS_WRITE)   shared   = FILE_SHARE_WRITE | FILE_SHARE_DELETE;
+    if (flags & OS_ACCESS_READ)    creation = OPEN_EXISTING;
+    if (flags & OS_ACCESS_WRITE)   creation = CREATE_ALWAYS;
+    if (flags & OS_ACCESS_APPEND)  creation = OPEN_ALWAYS;
+
+    HANDLE file_handle = CreateFileA((LPCSTR)file_name.data, access, shared, NULL, creation, FILE_ATTRIBUTE_NORMAL, NULL);
     OS_Handle handle = (OS_Handle)file_handle;
     return handle;
 }

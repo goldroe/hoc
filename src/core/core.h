@@ -17,7 +17,9 @@
 #define GB(n) (1024 * (MB(n)))
 
 #define IsPow2(x)          ((x)!=0 && ((x)&((x)-1))==0)
-#define AlignForward(x, a) ((x)+(a)-((x)&((a)-1)))
+// #define AlignForward(x, a) ((x)+(a)-((x)&((a)-1)))
+#define AlignForward(x,b)     (((x) + (b) - 1)&(~((b) - 1)))
+#define AlignDownPow2(x,b) ((x)&(~((b) - 1)))
 
 #ifdef __cplusplus
 #define EnumDefineFlagOperators(ENUMTYPE)       \

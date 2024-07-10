@@ -21,6 +21,11 @@ struct Key_Map {
 struct View;
 struct Buffer;
 
+enum GUI_View {
+    GUI_NIL,
+    GUI_FILE_SYSTEM,
+};
+
 struct Buffer_List {
     Buffer *first;
     Buffer *last;
@@ -37,6 +42,7 @@ struct View_List {
 struct Hoc_Application {
     Arena *arena;
 
+    String8 current_directory;
     //@Note View and Buffer lists
     View *active_view;
     View_List views;
@@ -44,6 +50,17 @@ struct Hoc_Application {
 
     Buffer_List buffers;
     int buffer_id_counter;
+
+    GUI_View active_gui;
+};
+
+struct GUI_File_System {
+    u8  path_buffer[2048];
+    u64 path_len;
+    u64 path_pos;
+    Arena *file_arena;
+    String8 sub_file_paths[2048];
+    int sub_file_count;
 };
 
 internal View *get_active_view();

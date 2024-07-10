@@ -9,6 +9,14 @@
 
 typedef u64 OS_Handle;
 
+enum OS_Access_Flags {
+    OS_ACCESS_READ     = (1<<0),
+    OS_ACCESS_WRITE    = (1<<1),
+    OS_ACCESS_EXECUTE  = (1<<2),
+    OS_ACCESS_APPEND   = (1<<3),
+};
+EnumDefineFlagOperators(OS_Access_Flags);
+
 enum OS_Key {
     OS_KEY_NIL,
     OS_KEY_A,

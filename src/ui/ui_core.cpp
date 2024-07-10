@@ -5,11 +5,11 @@ internal void ui_set_state(UI_State *state) {
 }
 
 internal UI_State *ui_state_new() {
-    Arena *arena = arena_new();
+    Arena *arena = make_arena(get_malloc_allocator());
     UI_State *ui = push_array(arena, UI_State, 1);
     ui->arena = arena;
-    ui->build_arenas[0] = arena_new();
-    ui->build_arenas[1] = arena_new();
+    ui->build_arenas[0] = make_arena(get_malloc_allocator());
+    ui->build_arenas[1] = make_arena(get_malloc_allocator());
     ui->box_table_size = 4096;
     ui->box_table = push_array(arena, UI_Hash_Bucket, ui->box_table_size);
     return ui;
@@ -205,6 +205,8 @@ internal UI_Box *ui_make_box(UI_Hash hash, UI_Box_Flags flags) {
             hash_bucket->last = box;
         }
     }
+    box->box_id = ui_state->build_counter;
+    ui_state->build_counter += 1;
 
     //@Note Reset per-frame builder options
     box->first = box->last = box->prev = box->next = box->parent = nullptr;
@@ -294,44 +296,73 @@ internal UI_Box *ui_make_box_from_string(String8 string, UI_Box_Flags flags) {
     return box;
 }
 
+
+//@Note Checks if any children boxes will receive an event in the future to prioritize ones in front
+internal bool ui_overlapping_descendant(UI_Box *root, int box_id) {
+    bool result = false;
+    for (UI_Box *child = root->first; child; child = child->next) {
+        result |= ui_overlapping_descendant(child, box_id);
+    }
+    if (root->box_id > box_id && ui_mouse_hover(root)) {
+        // printf("%d overlaps %f,%f  (%f,%f),(%f,%f)\n", root->box_id, ui_state->mouse_position.x, ui_state->mouse_position.y, root->rect.x0, root->rect.y0, root->rect.x1, root->rect.y1);
+        result = true;
+    }
+    return result;
+}
+
 internal UI_Signal ui_signal_from_box(UI_Box *box) {
     UI_Signal signal{};
     signal.box = box;
-    UI_Box *box_last_frame = nullptr;
-    box_last_frame = ui_box_from_hash(box->hash);
+    signal.key_modifiers = os_event_flags();
+
+    UI_Box *box_last_frame = ui_box_from_hash(box->hash);
     bool box_first_frame = box_last_frame == nullptr;
     if (box_first_frame) {
         return signal;
     }
 
-    signal.key_modifiers = os_event_flags();
-    signal.text = str8_zero();
-    bool event_in_bounds = ui_mouse_hover(box_last_frame);
-    
+    bool event_in_bounds = ui_mouse_hover(box);
+
+    bool do_later = false;
+    for (int i = 0; i < ui_state->last_build_collection.count; i++) {
+        UI_Box *collect_box = &ui_state->last_build_collection.data[i];
+        if (collect_box->box_id > box->box_id && ui_mouse_hover(collect_box)) {
+            do_later = true;
+            break;
+        }
+    }
+
+    //@Note Consume UI events for box
     for (UI_Event *event = ui_state->events.first, *next = nullptr; event; event = next) {
         next = event->next;
+        bool taken = false;
 
         switch (event->type) {
         case UI_EVENT_MOUSE_PRESS:
         {
-            if (event_in_bounds) {
+            if (event_in_bounds && !do_later) {
                 signal.flags |= UI_SIGNAL_CLICKED;
                 // signal.pos = event->pos;
                 ui_set_active(box->hash);
                 if (box->flags & UI_BOX_KEYBOARD_INPUT) {
                     ui_set_focus_active(box->hash);
                 }
+                taken = true;
             }
             break;
         }
         case UI_EVENT_MOUSE_RELEASE:
         {
-            ui_set_active(0);
+            if (event_in_bounds && !do_later) {
+                // ui_set_active(0);
+                signal.flags |= UI_SIGNAL_RELEASED;
+            }
             break; 
         }
         case UI_EVENT_SCROLL:
         {
-            if (event_in_bounds) {
+            if (event_in_bounds && !do_later) {
+                taken = true;
                 signal.scroll = event->delta;
             }
             break;
@@ -354,11 +385,16 @@ internal UI_Signal ui_signal_from_box(UI_Box *box) {
             break;
         }
         }
+
+        if (taken) {
+            ui_pop_event(event);
+        }
     }
 
     if (event_in_bounds) {
         signal.flags |= UI_SIGNAL_HOVER;
     }
+
     return signal;
 }
 
@@ -453,6 +489,7 @@ internal void ui_layout_place_boxes(UI_Box *box, Axis2 axis) {
                     box->fixed_position[axis] += sibling->fixed_size[axis];
                 }
             }
+
         }
     }
     box->rect.p0[axis] = box->fixed_position[axis];
@@ -493,11 +530,6 @@ internal v2 ui_get_text_position(UI_Box *box) {
 }
 
 internal void ui_begin_build(f32 animation_dt, OS_Handle window_handle, OS_Event_List *events) {
-    local_persist bool first_call = true;
-    if (first_call) {
-        first_call = false;
-    }
-
     ui_state->animation_dt = animation_dt;
 
     // printf("UI EVENTS\n");
@@ -514,6 +546,7 @@ internal void ui_begin_build(f32 animation_dt, OS_Handle window_handle, OS_Event
         case OS_EVENT_MOUSEDOWN:
             ui_event = ui_push_event(UI_EVENT_MOUSE_PRESS);
             ui_event->pos = event->pos;
+            ui_event->key = event->key;
             break;
         case OS_EVENT_MOUSEUP:
             ui_event = ui_push_event(UI_EVENT_MOUSE_RELEASE);
@@ -541,20 +574,35 @@ internal void ui_begin_build(f32 animation_dt, OS_Handle window_handle, OS_Event
 
     ui_push_font_face(default_font_face);
 
-    // printf("BUILD ROOT\n");
+    ui_state->mouse_captured = false;
+    ui_state->keyboard_captured = false;
+    ui_state->build_counter = 0;
+
     UI_Box *root = ui_make_box_from_string(str8_lit("~Root"), UI_BOX_NIL);
     root->flags = UI_BOX_FLOATING_X | UI_BOX_FLOATING_Y | UI_BOX_FIXED_WIDTH | UI_BOX_FIXED_HEIGHT;
     root->fixed_position = V2();
     root->fixed_size = os_get_window_dim(window_handle);
     ui_state->root = root;
     ui_state->parent_stack.push(root);
+}
 
-    ui_state->mouse_captured = false;
-    ui_state->keyboard_captured = false;
-    // printf("START BUILDING\n");
+//@Note Get rect, hash and id of each box for collections
+// Used for checking overlapping boxes
+internal void ui_collect_build_boxes(UI_Box *root) {
+    for (UI_Box *child = root->first; child; child = child->next) {
+        ui_collect_build_boxes(child);
+    }
+    UI_Box box{};
+    box.hash = root->hash;
+    box.box_id = root->box_id;
+    box.rect = root->rect;
+    ui_state->last_build_collection.push(box);
 }
 
 internal void ui_end_build() {
+    ui_state->last_build_collection.reset_count();
+    ui_collect_build_boxes(ui_state->root);
+    
     ui_state->build_index += 1;
 
     ui_state->events.first = nullptr;

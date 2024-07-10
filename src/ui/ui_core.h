@@ -85,6 +85,7 @@ struct UI_Box {
 
     UI_Hash hash = 0;
     UI_Box_Flags flags = UI_BOX_NIL;
+    int box_id = 0 ; //@Note Shows order of creation
 
     v2 fixed_position = V2(); // computed relative to parent
     v2 fixed_size = V2(); // computed on requested size
@@ -147,20 +148,24 @@ struct UI_State {
     Arena *build_arenas[2];
     u64 build_index = 0;
 
+    int build_counter = 0;
+    Auto_Array<UI_Box> last_build_collection;
     UI_Box *root = nullptr;
+
     UI_Hash focus_active_id = 0;
     UI_Hash active_id = 0;
 
     v2 mouse_position;
     bool mouse_captured = false;
     bool keyboard_captured = false;
-    f32 animation_dt;
 
     u64 box_table_size;
     UI_Hash_Bucket *box_table;
 
     UI_Event_List events;
     
+    f32 animation_dt;
+
     // per frame construction
     UI_Stack<Face*> font_stack;
     UI_Stack<UI_Box*> parent_stack;

@@ -51,9 +51,11 @@ global Arena *key_map_arena;
 global Key_Map *default_key_map;
 global Key_Map *find_file_key_map;
 
-global u8 text_buffer[1024];
-global u64 text_buffer_count;
-global u64 text_buffer_pos;
+global GUI_File_System gui_file_system;
+
+internal void set_active_gui(GUI_View gui) {
+    hoc_app->active_gui = gui;
+}
 
 internal void push_view(View *view) {
     if (hoc_app->views.first) {
@@ -85,7 +87,7 @@ internal View *get_active_view() {
 }
 
 internal Hoc_Application *make_hoc_application() {
-    Arena *arena = arena_new();
+    Arena *arena = make_arena(get_malloc_allocator());
     Hoc_Application *app = push_array(arena, Hoc_Application, 1);
     app->arena = arena;
     app->view_id_counter = 0;
@@ -225,12 +227,30 @@ inline f32 get_seconds_elapsed(s64 start, s64 end) {
     return result;
 }
 
-
 internal u16 os_key_to_key_mapping(OS_Key key, OS_Event_Flags modifiers) {
     u16 result = (u16)key;
     result |= (modifiers & OS_EVENT_FLAG_ALT) ? KEY_MOD_ALT : 0;
     result |= (modifiers & OS_EVENT_FLAG_CONTROL) ? KEY_MOD_CONTROL : 0;
     result |= (modifiers & OS_EVENT_FLAG_SHIFT) ? KEY_MOD_SHIFT : 0;
+    return result;
+}
+
+internal Cursor get_cursor_from_mouse(View *view, v2 mouse) {
+    //@Todo support non-mono fonts
+    Cursor result{};
+    f32 y = mouse.y - view->box->view_offset.y;
+    f32 x = mouse.x - view->box->view_offset.x;
+    s64 line = (s64)(y / view->box->font_face->glyph_height);
+    s64 col = (s64)(x / view->box->font_face->glyph_width);
+    if (line >= buffer_get_line_count(view->buffer)) {
+        result = get_cursor_from_position(view->buffer, buffer_get_length(view->buffer));
+    } else {
+        line = Clamp(line, 0, buffer_get_line_count(view->buffer) - 1);
+        col = Clamp(col, 0, buffer_get_line_length(view->buffer, line));
+        s64 position = get_position_from_line(view->buffer, line) + col;
+        position = ClampTop(position, get_position_from_line(view->buffer, line + 1) - 1);
+        result = get_cursor_from_position(view->buffer, position);
+    }
     return result;
 }
 
@@ -253,21 +273,6 @@ internal UI_BOX_CUSTOM_DRAW_PROC(draw_gui_view) {
     } else {
         draw_rect_outline(c_rect, cursor_color);
     }
-}
-
-internal Cursor get_cursor_from_mouse(View *view, v2 mouse) {
-    Cursor result{};
-    f32 y = mouse.y - view->box->view_offset.y;
-    f32 x = mouse.x - view->box->view_offset.x;
-    s64 line = (s64)(y / view->box->font_face->glyph_height);
-    // line = ClampTop(line, buffer_get_line_count(view->buffer) - 1);
-    //@Todo support non-mono fonts
-    s64 col = (s64)(x / view->box->font_face->glyph_width);
-    col = ClampTop(col, buffer_get_line_length(view->buffer, line));
-    s64 position = get_position_from_line(view->buffer, line) + col;
-    position = ClampTop(position, get_position_from_line(view->buffer, line + 1) - 1);
-    result = get_cursor_from_position(view->buffer, position);
-    return result;
 }
 
 internal void gui_view(View *view) {
@@ -337,6 +342,92 @@ internal void gui_view(View *view) {
     code_body->box_draw_data = (void *)view_draw_data;
 }
 
+
+internal void gui_file_system_submit_path(GUI_File_System *fs) {
+    if (fs->file_arena == nullptr) fs->file_arena = make_arena(get_malloc_allocator());
+    Arena *scratch = make_arena(get_malloc_allocator());
+
+    String8 find_path = str8_copy(scratch, str8(fs->path_buffer, fs->path_len));
+    Find_File_Data file_data{};
+    OS_Handle find_handle = find_first_file(fs->file_arena, find_path, &file_data);
+    fs->sub_file_count = 0;
+    if (os_valid_handle(find_handle)) {
+        do {
+            fs->sub_file_paths[fs->sub_file_count] = str8_copy(fs->file_arena, file_data.file_name);
+            fs->sub_file_count += 1;
+        } while (find_next_file(fs->file_arena, find_handle, &file_data));
+        find_close(find_handle);
+    } else {
+        printf("failed find_first_file\n");
+    }
+    arena_release(scratch);
+}
+
+internal void gui_file_system_start(String8 initial_path) {
+    GUI_File_System *fs = &gui_file_system;
+    MemoryCopy(fs->path_buffer, initial_path.data, initial_path.count);
+    fs->path_len = initial_path.count;
+    fs->path_pos = fs->path_len;
+
+    gui_file_system_submit_path(fs);
+}
+
+internal void gui_file_system_update(GUI_File_System *fs) {
+    ui_set_next_text_color(V4(.4f, .4f, .4f, 1.f));
+    ui_set_next_background_color(V4(.2f, .2f, .2f, 1.f));
+    ui_set_next_border_color(V4(.4f, .4f, .4f, 1.f));
+    ui_set_next_fixed_x(200.f);
+    ui_set_next_fixed_y(200.f);
+    ui_set_next_fixed_width(600.f);
+    ui_set_next_fixed_height(80.f);
+    ui_set_next_child_layout(AXIS_Y);
+    UI_Box *fs_container = ui_make_box_from_string(str8_lit("file_system"), UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT);
+    ui_set_string(fs_container, str8_lit("Navigate to File"));
+
+    UI_BackgroundColor(V4(.4f, .4f, .4f, 1.f))
+    UI_TextColor(V4(.2f, .2f, .2f, 1.f))
+    UI_BorderColor(V4(.2f, .2f, .2f, 1.f))
+    UI_Parent(fs_container)
+    UI_PrefWidth(ui_pct(1.f, 1.f))
+    UI_PrefHeight(ui_text_dim(2.f, 1.f))
+    {
+        UI_Signal prompt_sig = ui_line_edit(str8_lit("Navigate to File"), fs->path_buffer, 2048, &fs->path_pos, &fs->path_len);
+        if (!prompt_sig.box->string.count) {
+            ui_set_string(prompt_sig.box, str8_lit("Navigate to File"));
+        }
+
+        if (ui_pressed(prompt_sig)) {
+            switch (prompt_sig.key) {
+            case OS_KEY_ENTER:
+                gui_file_system_submit_path(fs);
+                break;
+            }
+        }
+
+        Arena *scratch = make_arena(get_malloc_allocator());
+        View *view = get_active_view();
+        for (int i = 0; i < fs->sub_file_count; i++) {
+            String8 sub_path = fs->sub_file_paths[i];
+            if (ui_clicked(ui_button(sub_path))) {
+                String8 path_string = str8(fs->path_buffer, fs->path_len);
+                String8 full_path = str8_zero();
+                if (path_is_relative(path_string)) {
+                    printf("relative\n");
+                    full_path = str8_concat(scratch, view->buffer->file_path, str8_lit("/"));
+                } else {
+                    full_path = str8_concat(scratch, path_string, str8_lit("/"));
+                }
+                full_path = str8_concat(scratch, full_path, sub_path);
+                printf("CLICKED %s\n", full_path.data);
+                view->buffer = make_buffer(full_path);
+                find_file_exit();
+            }
+        }
+        arena_release(scratch);
+    }
+}
+
+
 internal void draw_ui_box(UI_Box *box) {
     r_d3d11_state->current_texture = box->font_face->texture;
     if (box->flags & UI_BOX_DRAW_BACKGROUND) {
@@ -366,6 +457,11 @@ internal void draw_ui_layout(UI_Box *box) {
     }
 }
 
+global u8 edit_buffer[255];
+global u64 edit_cap = 255;
+global u64 edit_pos = 0;
+global u64 edit_count = 0;
+
 internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handle, f32 dt) {
     ui_begin_build(dt, window_handle, os_events);
 
@@ -374,6 +470,12 @@ internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handl
     ui_set_next_pref_width(ui_px(window_dim.x, 1.f));
     ui_set_next_pref_height(ui_px(window_dim.y, 1.f));
     UI_Box *main_body = ui_make_box_from_string(str8_lit("main_code_body"), UI_BOX_NIL);
+    // printf("%d\n", main_body->box_id);
+
+    //@Note Default the focus to the first view
+    if (ui_focus_active_id() == 0 && hoc_app->views.first->box) {
+        ui_set_focus_active(hoc_app->views.first->box->hash);
+    }
 
     UI_Parent(main_body)
     UI_BackgroundColor(V4(1.f, 1.f, 1.f, 1.f))
@@ -386,6 +488,15 @@ internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handl
         for (View *view = hoc_app->views.first; view; view = view->next) {
             gui_view(view);
         }
+
+        // ui_set_next_pref_width(ui_px(280.f, 1.f));
+        // ui_set_next_pref_height(ui_px(40.f, 1.f));
+        // ui_line_edit(str8_lit("line_edit_"), edit_buffer, edit_cap, &edit_pos, &edit_count);
+    }
+
+    if (hoc_app->active_gui == GUI_FILE_SYSTEM) {
+        GUI_File_System *fs = &gui_file_system;
+        gui_file_system_update(fs);
     }
 
     ui_layout_apply(ui_state->root);
@@ -501,7 +612,7 @@ internal Key_Map *load_key_map(Arena *arena, String8 file_name) {
 }
 
 internal View *view_new() {
-    Arena *arena = arena_new();
+    Arena *arena = make_arena(get_malloc_allocator());
     View *result = push_array(arena, View, 1);
     result->arena = arena;
     result->id = hoc_app->view_id_counter++;
@@ -510,7 +621,34 @@ internal View *view_new() {
 
 int main(int argc, char **argv) {
     argc--; argv++;
-    
+    Arena *arg_arena = make_arena(get_malloc_allocator());
+    int argument_count = argc;
+    String8 *arguments = push_array(arg_arena, String8, argc);
+    for (int i = 0; i < argc; i++) {
+        char *arg = argv[i];
+        arguments[i] = str8_copy(arg_arena, str8_cstring(arg));
+    }
+
+    String8 file_name = str8_lit("*scratch*");
+    for (int i = 0; i < argument_count; i++) {
+        String8 argument = arguments[i];
+        if (argument.data && argument.data[0] == '-') {
+            continue; 
+        } 
+        if (argument.data) {
+            file_name = argument;
+            break;
+        }
+    }
+
+    String8 current_directory = path_current_dir(arg_arena);
+
+    if (path_is_relative(file_name)) {
+        String8 full_path = str8_concat(arg_arena, current_directory, str8_lit("/"));
+        full_path = str8_concat(arg_arena, full_path, file_name);
+        file_name = full_path;
+    }
+
     QueryPerformanceFrequency((LARGE_INTEGER *)&performance_frequency);
     timeBeginPeriod(1);
 
@@ -534,23 +672,26 @@ int main(int argc, char **argv) {
 
     v2 old_window_dim = V2();
    
-    win32_event_arena = arena_new();
+    win32_event_arena = make_arena(get_malloc_allocator());
 
     hoc_app = make_hoc_application();
     ui_set_state(ui_state_new());
 
-    default_font_face = load_font_face(str8_lit("fonts/consolas.ttf"), 24);
+    default_font_face = load_font_face(str8_lit("fonts/consolas.ttf"), 13);
 
-    key_map_arena = arena_new();
+    key_map_arena = make_arena(get_malloc_allocator());
     default_key_map = load_key_map(key_map_arena, str8_lit("data/bindings.hoc"));
 
+    Arena *string_arena = make_arena(get_malloc_allocator());
+    hoc_app->current_directory = current_directory;
+
     View *default_view = view_new();
-    default_view->buffer = make_buffer_from_file(str8_lit("asdf"));
+    default_view->buffer = make_buffer(file_name);
     default_view->key_map = default_key_map;
     default_view->face = default_font_face;
     push_view(default_view);
     push_buffer(default_view->buffer);
-    default_view->panel_dim = V2(1920.f, 1080.f);
+    default_view->panel_dim = V2(1000.f, 600.f);
     
     // View *split_view = view_new();
     // split_view->buffer = make_buffer(str8_lit("test"));

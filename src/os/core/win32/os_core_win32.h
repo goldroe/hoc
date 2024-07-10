@@ -10,5 +10,4 @@
 #define OS_WINDOWS
 #include <timeapi.h>
 
-
 #endif // OS_CORE_WIN32_H

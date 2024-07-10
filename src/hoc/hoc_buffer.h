@@ -26,6 +26,7 @@ struct Buffer {
     Buffer_ID id;
     Buffer *prev;
     Buffer *next;
+    String8 file_path;
     String8 file_name;
     u8 *text;
     s64 gap_start;
@@ -76,7 +77,7 @@ internal Cursor get_cursor_from_position(Buffer *buffer, s64 position);
 internal s64 get_position_from_line(Buffer *buffer, s64 line);
 internal Cursor get_cursor_from_line(Buffer *buffer, s64 line);
 
-internal String8 buffer_to_string(Buffer *buffer);
+internal String8 buffer_to_string(Arena *arena, Buffer *buffer);
 internal String8 buffer_to_string_apply_line_endings(Buffer *buffer);
 internal String8 buffer_to_string_span(Buffer *buffer, Span span);
 

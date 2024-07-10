@@ -40,7 +40,7 @@ internal bool d3d11_make_shader(String8 shader_name, String8 source, const char 
 }
 
 internal bool d3d11_make_shader_from_file(String8 file_name, const char *vs_entry, const char *ps_entry, D3D11_INPUT_ELEMENT_DESC *items, int item_count, ID3D11VertexShader **vshader_out, ID3D11PixelShader **pshader_out, ID3D11InputLayout **input_layout_out) {
-    OS_Handle file_handle = os_open_file(file_name);
+    OS_Handle file_handle = os_open_file(file_name, OS_ACCESS_READ);
     String8 source = os_read_file_string(file_handle);
     os_close_handle(file_handle);
     return d3d11_make_shader(file_name, source, vs_entry, ps_entry, items, item_count, vshader_out, pshader_out, input_layout_out);

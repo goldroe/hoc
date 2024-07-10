@@ -17,15 +17,18 @@ void view_set_cursor(View *view, Cursor cursor) {
 }
 
 void write_buffer(Buffer *buffer) {
-    String8 buffer_string = buffer_to_string_apply_line_endings(buffer);
-    OS_Handle file_handle = os_open_file(buffer->file_name);
-    if (file_handle) {
+    // String8 buffer_string = buffer_to_string_apply_line_endings(buffer);
+    Arena *arena = make_arena(get_malloc_allocator());
+    String8 buffer_string = buffer_to_string(arena, buffer);
+    OS_Handle file_handle = os_open_file(buffer->file_name, OS_ACCESS_WRITE);
+    if (os_valid_handle(file_handle)) {
+        printf("%s\n", buffer_string.data);
         os_write_file(file_handle, buffer_string.data, buffer_string.count);
         os_close_handle(file_handle);
     } else {
         printf("Could not open file '%s'\n", buffer->file_name.data);
     }
-    free(buffer_string.data);
+    arena_release(arena);
 }
 
 
@@ -331,12 +334,15 @@ COMMAND(goto_last_line) {
     view_set_cursor(view, get_cursor_from_position(view->buffer, buffer_get_length(view->buffer)));
 }
 
+internal void set_active_gui(GUI_View gui);
+internal void gui_file_system_start(String8 initial_path);
+
 COMMAND(find_file) {
-    ui_set_next_text_color(V4(0.f, 0.f, 0.f, 1.f));
-    ui_set_next_background_color(V4(.4f, .4f, .4f, 1.f));
-    ui_set_next_fixed_width(200.f);
-    ui_set_next_fixed_height(80.f);
-    ui_set_next_fixed_x(200.f);
-    ui_set_next_fixed_y(200.f);
-    UI_Signal sig = ui_button(str8_lit("find_file_dialog"));
+    set_active_gui(GUI_FILE_SYSTEM);
+    View *view = get_active_view();
+    gui_file_system_start(view->buffer->file_path);
+}
+
+COMMAND(find_file_exit) {
+    set_active_gui(GUI_NIL);
 }
