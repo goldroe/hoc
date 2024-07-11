@@ -254,24 +254,27 @@ internal Cursor get_cursor_from_mouse(View *view, v2 mouse) {
     return result;
 }
 
-
 struct UI_View_Draw_Data {
     View *view;
 };
 
 internal UI_BOX_CUSTOM_DRAW_PROC(draw_gui_view) {
-    UI_View_Draw_Data *draw_data = (UI_View_Draw_Data *)box_draw_data;
+    UI_View_Draw_Data *draw_data = (UI_View_Draw_Data *)user_data;
     String8 string_before_cursor = box->string;
     string_before_cursor.count = draw_data->view->cursor.position;
 
+    draw_rect(box->rect, box->background_color);
+
+    v2 text_position = ui_get_text_position(box);
+    text_position += box->view_offset;
+    draw_string(box->string, box->font_face, box->text_color, text_position);
+
     v2 c_pos = box->rect.p0 + measure_string_size(string_before_cursor, box->font_face) + box->view_offset;
-    // Rect c_rect = make_rect(c_pos.x, c_pos.y, box->font_face->glyph_width, box->font_face->glyph_height);
     Rect c_rect = make_rect(c_pos.x, c_pos.y, 2.f, box->font_face->glyph_height);
-    v4 cursor_color = V4(0.f, 0.f, 0.f, 1.f);
     if (box->hash == ui_focus_active_id()) {
-        draw_rect(c_rect, cursor_color);
+        draw_rect(c_rect, box->text_color);
     } else {
-        draw_rect_outline(c_rect, cursor_color);
+        draw_rect_outline(c_rect, box->text_color);
     }
 }
 
@@ -342,8 +345,8 @@ internal void gui_view(View *view) {
     code_body->box_draw_data = (void *)view_draw_data;
 }
 
-
-internal void gui_file_system_submit_path(GUI_File_System *fs) {
+internal void gui_file_system_load_files(GUI_File_System *fs) {
+    printf("LOAD FILES\n");
     if (fs->file_arena == nullptr) fs->file_arena = make_arena(get_malloc_allocator());
     Arena *scratch = make_arena(get_malloc_allocator());
 
@@ -368,18 +371,23 @@ internal void gui_file_system_start(String8 initial_path) {
     MemoryCopy(fs->path_buffer, initial_path.data, initial_path.count);
     fs->path_len = initial_path.count;
     fs->path_pos = fs->path_len;
-
-    gui_file_system_submit_path(fs);
+    gui_file_system_load_files(fs);
 }
 
 internal void gui_file_system_update(GUI_File_System *fs) {
+    View *view = get_active_view();
+    // v2 root_dim = ui_get_root()->fixed_size;
+    v2 root_dim = view->panel_dim;
+    v2 dim = V2(600.f, 400.f);
+    v2 p = V2(.5f * root_dim.x - .5f * dim.x, .5f * root_dim.y - .5f * dim.y);
+
     ui_set_next_text_color(V4(.4f, .4f, .4f, 1.f));
     ui_set_next_background_color(V4(.2f, .2f, .2f, 1.f));
     ui_set_next_border_color(V4(.4f, .4f, .4f, 1.f));
-    ui_set_next_fixed_x(200.f);
-    ui_set_next_fixed_y(200.f);
-    ui_set_next_fixed_width(600.f);
-    ui_set_next_fixed_height(80.f);
+    ui_set_next_fixed_x(p.x);
+    ui_set_next_fixed_y(p.y);
+    ui_set_next_fixed_width(dim.x);
+    ui_set_next_fixed_height(dim.y);
     ui_set_next_child_layout(AXIS_Y);
     UI_Box *fs_container = ui_make_box_from_string(str8_lit("file_system"), UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT);
     ui_set_string(fs_container, str8_lit("Navigate to File"));
@@ -396,30 +404,32 @@ internal void gui_file_system_update(GUI_File_System *fs) {
             ui_set_string(prompt_sig.box, str8_lit("Navigate to File"));
         }
 
+        Arena *scratch = make_arena(get_malloc_allocator());
         if (ui_pressed(prompt_sig)) {
-            switch (prompt_sig.key) {
-            case OS_KEY_ENTER:
-                gui_file_system_submit_path(fs);
-                break;
+            if (prompt_sig.key == OS_KEY_SLASH || prompt_sig.key == OS_KEY_BACKSLASH) {
+                gui_file_system_load_files(fs);
+            } else if (prompt_sig.key == OS_KEY_BACKSPACE) {
+                u8 last = fs->path_len > 0 ? fs->path_buffer[fs->path_len - 1] : 0;
+                if (last == '\\' || last == '/') {
+                    gui_file_system_load_files(fs);
+                }
+            } else if (prompt_sig.key == OS_KEY_ENTER) {
+                String8 file_path = str8_copy(scratch, str8(fs->path_buffer, fs->path_len));
+                view->buffer = make_buffer(file_path);
+                find_file_exit();
+            } else if (prompt_sig.key == OS_KEY_ESCAPE) {
+                find_file_exit();
             }
         }
-
-        Arena *scratch = make_arena(get_malloc_allocator());
-        View *view = get_active_view();
+        
         for (int i = 0; i < fs->sub_file_count; i++) {
             String8 sub_path = fs->sub_file_paths[i];
             if (ui_clicked(ui_button(sub_path))) {
-                String8 path_string = str8(fs->path_buffer, fs->path_len);
-                String8 full_path = str8_zero();
-                if (path_is_relative(path_string)) {
-                    printf("relative\n");
-                    full_path = str8_concat(scratch, view->buffer->file_path, str8_lit("/"));
-                } else {
-                    full_path = str8_concat(scratch, path_string, str8_lit("/"));
-                }
-                full_path = str8_concat(scratch, full_path, sub_path);
-                printf("CLICKED %s\n", full_path.data);
-                view->buffer = make_buffer(full_path);
+                //@Todo use a set normalized path for this, not current prompt path
+                String8 file_path = str8(fs->path_buffer, fs->path_len);
+                file_path = str8_concat(scratch, file_path, sub_path);
+                // printf("CLICKED %s\n", file_path.data);
+                view->buffer = make_buffer(file_path);
                 find_file_exit();
             }
         }
@@ -444,12 +454,10 @@ internal void draw_ui_box(UI_Box *box) {
 }
 
 internal void draw_ui_layout(UI_Box *box) {
-    if (box != ui_state->root) {
-        draw_ui_box(box);
-    }
-
     if (box->custom_draw_proc) {
         box->custom_draw_proc(box, box->box_draw_data);
+    } else if (box != ui_get_root()) {
+        draw_ui_box(box);
     }
 
     for (UI_Box *child = box->first; child != nullptr; child = child->next) {
@@ -642,12 +650,13 @@ int main(int argc, char **argv) {
     }
 
     String8 current_directory = path_current_dir(arg_arena);
+    printf("CD %s\n", current_directory.data);
 
     if (path_is_relative(file_name)) {
-        String8 full_path = str8_concat(arg_arena, current_directory, str8_lit("/"));
-        full_path = str8_concat(arg_arena, full_path, file_name);
-        file_name = full_path;
+        file_name = str8_concat(arg_arena, current_directory, file_name);
     }
+
+    printf("file name: %s\n", file_name.data);
 
     QueryPerformanceFrequency((LARGE_INTEGER *)&performance_frequency);
     timeBeginPeriod(1);

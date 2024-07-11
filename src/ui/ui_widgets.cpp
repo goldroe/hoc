@@ -37,6 +37,28 @@ internal UI_Signal ui_buttonf(const char *fmt, ...) {
     return ui_button(string);
 }
 
+struct UI_Line_Edit_Draw_Data {
+    String8 edit_string;
+    s64 cursor;
+};
+
+internal UI_BOX_CUSTOM_DRAW_PROC(ui_draw_line_edit) {
+    UI_Line_Edit_Draw_Data *draw_data = (UI_Line_Edit_Draw_Data *)user_data;
+    draw_rect(box->rect, box->background_color);
+
+    v2 text_position = ui_get_text_position(box);
+    text_position += box->view_offset;
+    draw_string(draw_data->edit_string, box->font_face, box->text_color, text_position);
+
+    String8 string_before_cursor = draw_data->edit_string;
+    string_before_cursor.count = (u64)draw_data->cursor;
+    v2 c_pos = text_position + measure_string_size(string_before_cursor, box->font_face);
+    Rect c_rect = make_rect(c_pos.x, c_pos.y, 2.f, box->font_face->glyph_height);
+    if (box->hash == ui_focus_active_id()) {
+        draw_rect(c_rect, box->text_color);
+    }
+}
+
 internal UI_Signal ui_line_edit(String8 name, void *buffer, u64 max_buffer_capacity, u64 *buffer_pos,  u64 *buffer_count) {
     UI_Box *box = ui_make_box_from_string(name, UI_BOX_CLICKABLE | UI_BOX_HOVERABLE | UI_BOX_KEYBOARD_INPUT | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_BORDER | UI_BOX_DRAW_TEXT);
     UI_Signal signal = ui_signal_from_box(box);
@@ -69,15 +91,18 @@ internal UI_Signal ui_line_edit(String8 name, void *buffer, u64 max_buffer_capac
                     if (pos > 0) {
                         MemoryCopy((u8*)buffer + pos - 1, (u8*)buffer + pos, count - pos);
                         pos -= 1;
+                        count -= 1;
                     }
                     break;
                 case OS_KEY_LEFT:
-                    pos -= 1;
-                    pos = Max(pos, 0);
+                    if (pos > 0) {
+                        pos -= 1;
+                    }
                     break; 
                 case OS_KEY_RIGHT:
-                    pos += 1;
-                    pos = Min(pos, count);
+                    if (pos < count) {
+                        pos += 1;
+                    }
                     break;
                 }
                 break;
@@ -87,8 +112,12 @@ internal UI_Signal ui_line_edit(String8 name, void *buffer, u64 max_buffer_capac
     }
     *buffer_count = count;
     *buffer_pos = pos;
-    String8 string = str8_copy(ui_build_arena(), str8((u8*)buffer, count));
-    ui_set_string(box, string);
+
+    UI_Line_Edit_Draw_Data *draw_data = push_array(ui_build_arena(), UI_Line_Edit_Draw_Data, 1);
+    draw_data->edit_string = str8((u8 *)buffer, *buffer_count);
+    draw_data->cursor = *buffer_pos;
+    box->box_draw_data = draw_data;
+    box->custom_draw_proc = ui_draw_line_edit;
     return signal;
 }
 

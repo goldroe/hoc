@@ -22,9 +22,9 @@ internal String8 path_strip_extension(Arena *arena, String8 path) {
 
 internal String8 path_strip_dir_name(Arena *arena, String8 path) {
     Assert(path.data);
-    u64 end = path.count - 1;
-    while (end > 0) {
-        if (IS_SLASH(path.data[end])) break;
+    u64 end = path.count;
+    while (end) {
+        if (IS_SLASH(path.data[end - 1])) break;
         end--;
     }
     String8 result = str8_copy(arena, {path.data, end});
@@ -121,9 +121,10 @@ internal String8 path_home_name(Arena *arena) {
 #ifdef _WIN32
 internal String8 path_current_dir(Arena *arena) {
     DWORD length = GetCurrentDirectoryA(0, NULL);
-    u8 *buffer = (u8 *)arena_push(arena, length + 1);
+    u8 *buffer = (u8 *)arena_push(arena, length + 2);
     DWORD ret = GetCurrentDirectoryA(length, (LPSTR)buffer);
-    String8 result = str8(buffer, (u64)ret);
+    buffer[ret] = '\\';
+    String8 result = str8(buffer, (u64)ret + 1);
     return result;
 }
 #elif defined(__linux__)

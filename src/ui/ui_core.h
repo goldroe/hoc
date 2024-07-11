@@ -71,7 +71,7 @@ EnumDefineFlagOperators(UI_Box_Flags);
 
 struct UI_Box;
 typedef void (*UI_Box_Draw_Proc)(UI_Box *, void *);
-#define UI_BOX_CUSTOM_DRAW_PROC(name) void name(UI_Box *box, void *box_draw_data)
+#define UI_BOX_CUSTOM_DRAW_PROC(name) void name(UI_Box *box, void *user_data)
 
 struct UI_Box {
     UI_Box *hash_prev = nullptr;
