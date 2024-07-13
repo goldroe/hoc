@@ -55,7 +55,7 @@ internal void str8_append(String8 *first, String8 second) {
     *first = temp;
 }
 
-internal bool str8_eq(String8 first, String8 second) {
+internal bool str8_match(String8 first, String8 second) {
     if (first.count != second.count) return false;
     for (u64 i = 0; i < first.count; i++) {
         if (first.data[i] != second.data[i]) {
@@ -63,4 +63,16 @@ internal bool str8_eq(String8 first, String8 second) {
         }
     }
     return true;
+}
+
+internal String8 str8_pushf(Arena *arena, const char *fmt, va_list args) {
+    va_list args_;
+    va_copy(args_, args);
+    String8 result;
+    int bytes = hoc_vsnprintf(NULL, NULL, fmt, args_) + 1;
+    result.data = push_array(arena, u8, bytes);
+    result.count = hoc_vsnprintf((char *)result.data, bytes, fmt, args_);
+    result.data[result.count] = 0;
+    va_end(args_);
+    return result;
 }
