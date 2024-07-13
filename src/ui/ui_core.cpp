@@ -5,11 +5,11 @@ internal void ui_set_state(UI_State *state) {
 }
 
 internal UI_State *ui_state_new() {
-    Arena *arena = make_arena(get_malloc_allocator());
+    Arena *arena = make_arena(get_virtual_allocator());
     UI_State *ui = push_array(arena, UI_State, 1);
     ui->arena = arena;
-    ui->build_arenas[0] = make_arena(get_malloc_allocator());
-    ui->build_arenas[1] = make_arena(get_malloc_allocator());
+    ui->build_arenas[0] = make_arena(get_virtual_allocator());
+    ui->build_arenas[1] = make_arena(get_virtual_allocator());
     ui->box_table_size = 4096;
     ui->box_table = push_array(arena, UI_Hash_Bucket, ui->box_table_size);
     return ui;
@@ -134,9 +134,9 @@ internal UI_Box *ui_get_root() {
     return ui_state->root;
 }
 
-internal UI_Hash ui_hash(String8 text) {
+internal UI_Hash ui_hash_string(UI_Hash seed_hash, String8 text) {
     //@Note djb2 hash algorithm
-    UI_Hash hash = 5381;
+    UI_Hash hash = seed_hash;
     int c;
     while (c = *text.data++) {
         hash = ((hash << 5) + hash) + c; // hash * 33 + c
@@ -222,9 +222,10 @@ internal UI_Box *ui_make_box(UI_Hash hash, UI_Box_Flags flags) {
     }
 
     ui_push_box(box, parent);
-
-    assert(!ui_state->font_stack.is_empty());
-    box->font_face = ui_state->font_stack.top();
+    
+    if (!ui_state->font_stack.is_empty()) {
+        box->font_face = ui_state->font_stack.top();
+    }
 
     if (!ui_state->fixed_x_stack.is_empty()) {
         box->flags |= UI_BOX_FLOATING_X;
@@ -289,13 +290,35 @@ internal UI_Box *ui_make_box(UI_Hash hash, UI_Box_Flags flags) {
     return box;
 }
 
-internal UI_Box *ui_make_box_from_string(String8 string, UI_Box_Flags flags) {
+internal UI_Hash ui_seed_hash(UI_Box *parent) {
+    UI_Hash seed_hash = 0;
+    UI_Box *inherited_seed_parent = parent;
+    while (inherited_seed_parent) {
+        if (inherited_seed_parent->hash != 0) {
+            seed_hash = inherited_seed_parent->hash;
+        }
+        inherited_seed_parent = inherited_seed_parent->parent;
+    }
+    return seed_hash;
+}
+
+internal UI_Box *ui_make_box_from_string(UI_Box_Flags flags, String8 string) {
     UI_Box *box = nullptr;
-    UI_Hash hash = ui_hash(string);
-    box = ui_make_box(hash, flags);
+    UI_Box *parent = ui_top_parent();
+    UI_Hash seed_hash = ui_seed_hash(parent);
+    UI_Hash box_hash = ui_hash_string(seed_hash, string);
+    box = ui_make_box(box_hash, flags);
     return box;
 }
 
+internal UI_Box *ui_make_box_from_stringf(UI_Box_Flags flags, char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    String8 string = str8_pushf(ui_build_arena(), fmt, args);
+    va_end(args);
+    UI_Box *box = ui_make_box_from_string(flags, string);
+    return box;
+}
 
 //@Note Checks if any children boxes will receive an event in the future to prioritize ones in front
 internal bool ui_overlapping_descendant(UI_Box *root, int box_id) {
@@ -572,13 +595,13 @@ internal void ui_begin_build(f32 animation_dt, OS_Handle window_handle, OS_Event
         }
     }
 
-    ui_push_font_face(default_font_face);
+    ui_push_font_face(default_fonts[FONT_DEFAULT]);
 
     ui_state->mouse_captured = false;
     ui_state->keyboard_captured = false;
     ui_state->build_counter = 0;
 
-    UI_Box *root = ui_make_box_from_string(str8_lit("~Root"), UI_BOX_NIL);
+    UI_Box *root = ui_make_box_from_string(UI_BOX_NIL, str8_lit("~Root"));
     root->flags = UI_BOX_FLOATING_X | UI_BOX_FLOATING_Y | UI_BOX_FIXED_WIDTH | UI_BOX_FIXED_HEIGHT;
     root->fixed_position = V2();
     root->fixed_size = os_get_window_dim(window_handle);
@@ -630,6 +653,7 @@ internal void ui_end_build() {
 #define ui_stack_set_next(Stack, V) ui_state->Stack##_stack.push(V); \
     ui_state->Stack##_stack.auto_pop = true;    \
 
+internal UI_Box *ui_top_parent() { UI_Box *result = ui_state->parent_stack.is_empty() ? NULL : ui_state->parent_stack.top(); return result; }
 
 internal void ui_set_next_font_face(Face *v) { ui_stack_set_next(font, v); }
 internal void ui_set_next_parent(UI_Box *v) { ui_stack_set_next(parent, v) }

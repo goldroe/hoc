@@ -2,25 +2,22 @@
 #include "ui_widgets.h"
 
 internal UI_Signal ui_label(String8 name) {
-    UI_Box *box = ui_make_box_from_string(name, UI_BOX_DRAW_TEXT);
-    String8 string = str8_copy(ui_build_arena(), name);
-    ui_set_string(box, string);
+    UI_Box *box = ui_make_box_from_string(UI_BOX_DRAW_TEXT, name);
+    // String8 string = str8_copy(ui_build_arena(), name);
+    // ui_set_string(box, string);
     return ui_signal_from_box(box);
 }
 
 internal UI_Signal ui_labelf(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    u64 count = vsnprintf(nullptr, 0, fmt, args);
-    u8 *buffer = push_array(ui_build_arena(), u8, count + 1);
-    vsnprintf((char *)buffer, count + 1, fmt, args);
+    String8 string = str8_pushf(ui_build_arena(), fmt, args);
     va_end(args);
-    String8 string = str8(buffer, count);
     return ui_label(string);
 }
 
 internal UI_Signal ui_button(String8 name) {
-    UI_Box *box = ui_make_box_from_string(name, UI_BOX_CLICKABLE | UI_BOX_HOVERABLE | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_BORDER | UI_BOX_DRAW_TEXT);
+    UI_Box *box = ui_make_box_from_string(UI_BOX_CLICKABLE | UI_BOX_HOVERABLE | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_BORDER | UI_BOX_DRAW_TEXT, name);
     String8 string = str8_copy(ui_build_arena(), name);
     ui_set_string(box, string);
     return ui_signal_from_box(box);
@@ -29,11 +26,8 @@ internal UI_Signal ui_button(String8 name) {
 internal UI_Signal ui_buttonf(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    u64 count = vsnprintf(nullptr, 0, fmt, args);
-    u8 *buffer = push_array(ui_build_arena(), u8, count + 1);
-    vsnprintf((char *)buffer, count + 1, fmt, args);
+    String8 string = str8_pushf(ui_build_arena(), fmt, args);
     va_end(args);
-    String8 string = str8(buffer, count);
     return ui_button(string);
 }
 
@@ -60,7 +54,7 @@ internal UI_BOX_CUSTOM_DRAW_PROC(ui_draw_line_edit) {
 }
 
 internal UI_Signal ui_line_edit(String8 name, void *buffer, u64 max_buffer_capacity, u64 *buffer_pos,  u64 *buffer_count) {
-    UI_Box *box = ui_make_box_from_string(name, UI_BOX_CLICKABLE | UI_BOX_HOVERABLE | UI_BOX_KEYBOARD_INPUT | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_BORDER | UI_BOX_DRAW_TEXT);
+    UI_Box *box = ui_make_box_from_string(UI_BOX_CLICKABLE | UI_BOX_HOVERABLE | UI_BOX_KEYBOARD_INPUT | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_BORDER | UI_BOX_DRAW_TEXT, name);
     UI_Signal signal = ui_signal_from_box(box);
 
     u64 pos = *buffer_pos;
@@ -203,7 +197,7 @@ internal void ui_row_begin(String8 name) {
     ui_set_next_pref_width(ui_pct(1.0f, 1.0f));
     ui_set_next_pref_height(ui_children_sum(1.0f));
     ui_set_next_child_layout(AXIS_X);
-    UI_Box *row = ui_make_box_from_string(name, UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_BORDER);
+    UI_Box *row = ui_make_box_from_string(UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_BORDER, name);
     ui_push_parent(row);
 }
 

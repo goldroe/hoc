@@ -205,6 +205,8 @@ struct UI_Signal {
 
 internal bool point_in_rect(v2 v, Rect rect);
 
+internal UI_Box *ui_top_parent();
+
 internal void ui_set_next_font_face(Face *font_face);
 internal void ui_set_next_parent(UI_Box *v);
 internal void ui_set_next_fixed_x(f32 v);
@@ -253,7 +255,7 @@ internal void ui_end_frame();
 internal Arena *ui_build_arena();
 
 internal UI_Box *ui_make_box(UI_Hash hash, UI_Box_Flags flags);
-internal UI_Box *ui_make_box_from_string(String8 string, UI_Box_Flags flags);
+internal UI_Box *ui_make_box_from_string(UI_Box_Flags flags, String8 string);
 internal UI_Box *ui_box_from_hash(UI_Hash hash);
 internal UI_Signal ui_signal_from_box(UI_Box *box);
 
@@ -273,6 +275,7 @@ internal UI_Size ui_size(UI_Size_Type type, f32 value, f32 strictness);
 #define ui_children_sum(strictness) (ui_size(UI_SIZE_CHILDREN_SUM, 0.0f, strictness))
 #define ui_text_dim(padding, strictness) (ui_size(UI_SIZE_TEXT_CONTENT, padding, strictness))
 
+#define UI_Font(font)     DeferLoop(ui_push_font_face(font), ui_pop_font_face())
 #define UI_Parent(parent) DeferLoop(ui_push_parent(parent), ui_pop_parent())
 #define UI_ChildLayoutAxis(axis) DeferLoop(ui_push_child_layout_axis(axis), ui_pop_child_layout_axis())
 #define UI_TextAlignment(align) DeferLoop(ui_push_text_alignment(align), ui_pop_text_alignment())
