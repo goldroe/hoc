@@ -1,28 +1,50 @@
 #include "draw.h"
 
-internal void draw_vertex(v2 position, v2 uv, v4 color) {
-    R_2D_Vertex v = {position, uv, color};
-    r_d3d11_state->ui_vertices.push(v);
+global Arena *draw_arena;
+global Draw_Bucket *draw_bucket;
+
+internal void draw_begin() {
+    if (draw_arena == nullptr) {
+        draw_arena = arena_alloc(get_malloc_allocator(), MB(16));
+    }
+
+    draw_bucket = push_array(draw_arena, Draw_Bucket, 1);
+    *draw_bucket = {};
 }
 
-internal void draw_glyph(Glyph g, Face *face, v4 color, v2 position) {
-    f32 x0 = position.x + g.bl;
-    f32 x1 = x0 + g.bx;
-    f32 y0 = position.y - g.bt + face->ascend;
-    f32 y1 = y0 + g.by;
+internal void draw_end() {
+    arena_clear(draw_arena);
+    draw_bucket = nullptr;
+}
 
-    f32 tw = g.bx / (f32)face->width;
-    f32 th = g.by / (f32)face->height;
-    f32 tx = g.to;
-    f32 ty = 0.0f;
+internal void draw_batch_push_vertex(R_Batch *batch, R_2D_Vertex src) {
+    R_2D_Vertex *dst = push_array(draw_arena, R_2D_Vertex, 1);
+    *dst = src;
+    batch->bytes += sizeof(R_2D_Vertex);
+ }
 
-    draw_vertex(V2(x0, y1), V2(tx,      ty + th), color);
-    draw_vertex(V2(x0, y0), V2(tx,      ty),      color);
-    draw_vertex(V2(x1, y0), V2(tx + tw, ty),      color);
-    draw_vertex(V2(x1, y1), V2(tx + tw, ty + th), color);
+internal void draw_push_batch_node(R_Batch_List *list, R_Batch_Node *node) {
+    if (list->first) {
+        list->last->next = node;
+    } else {
+        list->first = node;
+    }
+    list->last = node;
+    list->count += 1;
 }
 
 internal void draw_string(String8 string, Face *font_face, v4 color, v2 offset) {
+    void *tex = draw_bucket->tex;
+    R_Batch_Node *node = draw_bucket->batches.last;
+    if (!node || tex != font_face->texture) {
+        node = push_array(draw_arena, R_Batch_Node, 1);
+        node->batch.v = (u8 *)draw_arena->current + draw_arena->current->pos;
+        node->batch.params.type = R_PARAMS_UI;
+        node->batch.params.ui.tex = font_face->texture;
+        draw_push_batch_node(&draw_bucket->batches, node);
+        draw_bucket->tex = font_face->texture;
+    }
+
     v2 cursor = offset;
     for (u64 i = 0; i < string.count; i++) {
         u8 c = string.data[i];
@@ -32,17 +54,57 @@ internal void draw_string(String8 string, Face *font_face, v4 color, v2 offset) 
             continue;
         }
         Glyph g = font_face->glyphs[c];
-        draw_glyph(g, font_face, color, cursor);
+
+        Rect dst;
+        dst.x0 = cursor.x + g.bl;
+        dst.x1 = dst.x0 + g.bx;
+        dst.y0 = cursor.y - g.bt + font_face->ascend;
+        dst.y1 = dst.y0 + g.by;
+
+        Rect src;
+        src.x0 = g.to;
+        src.y0 = 0.f;
+        src.x1 = src.x0 + (g.bx / (f32)font_face->width);
+        src.y1 = src.y0 + (g.by / (f32)font_face->height);
+
+        R_2D_Vertex tl = { V2(dst.x0, dst.y0), V2(src.x0, src.y0), color };
+        R_2D_Vertex tr = { V2(dst.x1, dst.y0), V2(src.x1, src.y0), color };
+        R_2D_Vertex bl = { V2(dst.x0, dst.y1), V2(src.x0, src.y1), color };
+        R_2D_Vertex br = { V2(dst.x1, dst.y1), V2(src.x1, src.y1), color };
+
+        draw_batch_push_vertex(&node->batch, bl);
+        draw_batch_push_vertex(&node->batch, tl);
+        draw_batch_push_vertex(&node->batch, tr);
+        draw_batch_push_vertex(&node->batch, br);
+
         cursor.x += g.ax;
     }
 }
 
-internal void draw_rect(Rect rect, v4 color) {
-    v2 uv = V2(0.f, 0.f);
-    draw_vertex(V2(rect.x0, rect.y0), uv, color);
-    draw_vertex(V2(rect.x0, rect.y1), uv, color);
-    draw_vertex(V2(rect.x1, rect.y1), uv, color);
-    draw_vertex(V2(rect.x1, rect.y0), uv, color);
+internal void draw_rect(Rect dst, v4 color) {
+    void *tex = draw_bucket->tex;
+    R_Batch_Node *node = draw_bucket->batches.last;
+
+    if (!node || tex != nullptr) {
+        node = push_array(draw_arena, R_Batch_Node, 1);
+        node->batch.v = (u8 *)draw_arena->current + draw_arena->current->pos;
+        node->batch.params.type = R_PARAMS_UI;
+        node->batch.params.ui.tex = nullptr;
+        draw_push_batch_node(&draw_bucket->batches, node);
+
+        draw_bucket->tex = nullptr;
+    }
+    assert(node);
+
+    R_2D_Vertex tl = { V2(dst.x0, dst.y0), V2(0.f, 0.f), color };
+    R_2D_Vertex tr = { V2(dst.x1, dst.y0), V2(0.f, 0.f), color };
+    R_2D_Vertex bl = { V2(dst.x0, dst.y1), V2(0.f, 0.f), color };
+    R_2D_Vertex br = { V2(dst.x1, dst.y1), V2(0.f, 0.f), color };
+
+    draw_batch_push_vertex(&node->batch, bl);
+    draw_batch_push_vertex(&node->batch, tl);
+    draw_batch_push_vertex(&node->batch, tr);
+    draw_batch_push_vertex(&node->batch, br);
 }
 
 internal void draw_rect_outline(Rect rect, v4 color) {

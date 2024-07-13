@@ -179,7 +179,78 @@ internal D3D11_RECT rect_to_d3d11_rect(Rect rect) {
     return result;
 }
 
-internal void d3d11_render() {
+
+internal void d3d11_render(Draw_Bucket *draw_bucket) {
+    r_d3d11_state->device_context->OMSetBlendState(r_d3d11_state->blend_state, NULL, 0xffffffff);
+    r_d3d11_state->device_context->PSSetSamplers(0, 1, &r_d3d11_state->sampler);
+
+    for (R_Batch_Node *batch_node = draw_bucket->batches.first; batch_node; batch_node = batch_node->next) {
+        R_Batch batch = batch_node->batch;
+        R_Params params = batch.params;
+        switch (params.type) {
+        default:
+            assert(0);
+            break;
+            
+        case R_PARAMS_UI:
+        {
+            int vertices_count = batch.bytes / sizeof(R_2D_Vertex);
+            R_2D_Vertex *vertices = (R_2D_Vertex *)batch.v;
+            if (vertices_count == 0) return;
+
+            void *tex = params.ui.tex;
+            if (tex == nullptr) {
+                tex = r_d3d11_state->fallback_tex;
+            }
+
+            r_d3d11_state->device_context->PSSetShaderResources(0, 1, (ID3D11ShaderResourceView **)&tex);
+            
+            ID3D11VertexShader *vertex_shader = r_d3d11_state->vertex_shaders[D3D11_SHADER_UI];
+            ID3D11PixelShader *pixel_shader = r_d3d11_state->pixel_shaders[D3D11_SHADER_UI];
+            r_d3d11_state->device_context->VSSetShader(vertex_shader, nullptr, 0);
+            r_d3d11_state->device_context->PSSetShader(pixel_shader, nullptr, 0);
+
+            Rect draw_region = r_d3d11_state->draw_region;
+            D3D11_Uniform_UI ui_uniform = {};
+            ui_uniform.xform = ortho_rh_zo(draw_region.x0, draw_region.x1, draw_region.y1, draw_region.y0, -1.f, 1.f);
+            ID3D11Buffer *uniform_buffer = r_d3d11_state->uniform_buffers[D3D11_SHADER_UI];
+            d3d11_upload_uniform(uniform_buffer, (void *)&ui_uniform, sizeof(ui_uniform));
+            r_d3d11_state->device_context->VSSetConstantBuffers(0, 1, &uniform_buffer);
+
+            Auto_Array<u32> indices;
+            indices.reserve(vertices_count * 6 / 4);
+            for (int index = 0; index < vertices_count; index += 4) {
+                indices.push(index);
+                indices.push(index + 1);
+                indices.push(index + 2);
+                indices.push(index);
+                indices.push(index + 2);
+                indices.push(index + 3);
+            }
+            ID3D11Buffer *vertex_buffer = d3d11_make_vertex_buffer(vertices, sizeof(R_2D_Vertex) * vertices_count);
+            ID3D11Buffer *index_buffer = d3d11_make_index_buffer(indices.data, sizeof(u32) * (UINT)indices.count);
+
+            // IA
+            u32 stride = sizeof(R_2D_Vertex), offset = 0;
+            r_d3d11_state->device_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            r_d3d11_state->device_context->IASetInputLayout(r_d3d11_state->input_layouts[D3D11_SHADER_UI]);
+            r_d3d11_state->device_context->IASetVertexBuffers(0, 1, &vertex_buffer, &stride, &offset);
+            r_d3d11_state->device_context->IASetIndexBuffer(index_buffer, DXGI_FORMAT_R32_UINT, 0);
+            
+            r_d3d11_state->device_context->DrawIndexed((UINT)indices.count, 0, 0);
+
+            indices.clear();
+            if (vertex_buffer) vertex_buffer->Release();
+            if (index_buffer) index_buffer->Release();
+            break;
+        }
+        }
+    }
+}
+
+#if 0
+internal void _d3d11_render() {
+    if (r_d3d11_state->ui_vertices.count == 0) return;
     r_d3d11_state->device_context->VSSetShader(r_d3d11_state->vertex_shaders[D3D11_SHADER_UI], nullptr, 0);
     r_d3d11_state->device_context->PSSetShader(r_d3d11_state->pixel_shaders[D3D11_SHADER_UI], nullptr, 0);
 
@@ -222,9 +293,11 @@ internal void d3d11_render() {
     r_d3d11_state->device_context->DrawIndexed((UINT)indices.count, 0, 0);
     // r_d3d11_state->device_context->Draw((UINT)r_d3d11_state->ui_vertices.count, 0);
 
-    vertex_buffer->Release();
-    index_buffer->Release();
+    indices.clear();
+    if (vertex_buffer) vertex_buffer->Release();
+    if (index_buffer) index_buffer->Release();
 }
+#endif
 
 #if 0
 internal void d3d11_render_batch(Render_Batch *batch) {
@@ -417,9 +490,9 @@ internal void d3d11_render_initialize(HWND window_handle) {
     }
 
     D3D11_INPUT_ELEMENT_DESC ui_input_layout[] = {
-        { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT,       0, offsetof(R_2D_Vertex, p), D3D11_INPUT_PER_VERTEX_DATA, 0 },
-        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,       0, offsetof(R_2D_Vertex, uv),       D3D11_INPUT_PER_VERTEX_DATA, 0 },
-        { "COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(R_2D_Vertex, color),    D3D11_INPUT_PER_VERTEX_DATA, 0 },
+        { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT,       0, offsetof(R_2D_Vertex, dst),   D3D11_INPUT_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,       0, offsetof(R_2D_Vertex, src),   D3D11_INPUT_PER_VERTEX_DATA, 0 },
+        { "COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(R_2D_Vertex, color), D3D11_INPUT_PER_VERTEX_DATA, 0 },
     };
 
     d3d11_make_shader_from_file(str8_lit("data/shaders/ui.hlsl"), "vs_main", "ps_main", ui_input_layout, ARRAYSIZE(ui_input_layout), &r_d3d11_state->vertex_shaders[D3D11_SHADER_UI], &r_d3d11_state->pixel_shaders[D3D11_SHADER_UI], &r_d3d11_state->input_layouts[D3D11_SHADER_UI]);
@@ -431,6 +504,6 @@ internal void d3d11_render_initialize(HWND window_handle) {
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
         };
-        r_d3d11_state->fallback_texture = d3d11_create_texture_rgba(bitmap, 2, 2, 8);
+        r_d3d11_state->fallback_tex = d3d11_create_texture_rgba(bitmap, 2, 2, 8);
     }
 }
