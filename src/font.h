@@ -25,4 +25,10 @@ struct Face {
     void *texture;
 };
 
+enum Font_Type {
+    FONT_DEFAULT,
+    FONT_CODE,
+    FONT_COUNT,
+};
+
 #endif // FONT_H

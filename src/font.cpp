@@ -1,6 +1,6 @@
 #include "font.h"
 
-global Face *default_font_face;
+global Face *default_fonts[FONT_COUNT];
 
 internal Face *load_font_face(String8 font_name, int font_height) {
     FT_Library ft_lib;
