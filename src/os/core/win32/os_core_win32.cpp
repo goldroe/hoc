@@ -67,6 +67,11 @@ internal v2 os_get_window_dim(OS_Handle window_handle) {
     return result;
 }
 
+internal bool os_file_exists(String8 file_name) {
+    bool result = PathFileExistsA((LPCSTR)file_name.data);
+    return result;
+}
+
 internal bool os_valid_handle(OS_Handle handle) {
     bool result = (HANDLE)handle != INVALID_HANDLE_VALUE;
     return result;
