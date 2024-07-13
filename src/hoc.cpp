@@ -1,16 +1,21 @@
 #include <ft2build.h>
 #include <freetype/freetype.h>
 
+#include "core/core.h"
+#include "core/core_arena.h"
+#include "core/core_strings.h"
+#include "core/core_math.h"
+
 #pragma warning(push)
 #pragma warning( disable : 4244)
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 #pragma warning(pop)
 
-#include "core/core.h"
-#include "core/core_arena.h"
-#include "core/core_strings.h"
-#include "core/core_math.h"
+#define STB_SPRINTF_IMPLEMENTATION
+#define STB_SPRINTF_DECORATE(name) hoc_##name
+#include <stb_sprintf.h>
+
 #include "auto_array.h"
 #include "utils.h"
 #include "os/os.h"
@@ -19,6 +24,7 @@
 #include "lexer.h"
 #include "ui/ui_core.h"
 #include "ui/ui_widgets.h"
+#include "render_core.h"
 #include "render_d3d11.h"
 #include "draw.h"
 #include "hoc.h"
@@ -280,32 +286,32 @@ internal UI_BOX_CUSTOM_DRAW_PROC(draw_gui_view) {
 
 internal void gui_view(View *view) {
     //@Note Code body
-    String8 box_str = str8_concat(ui_build_arena(), str8_lit("editor_body_"), view->buffer->file_name);
     ui_set_next_child_layout(AXIS_Y);
     ui_set_next_pref_width(ui_px(view->panel_dim.x, 1.f));
     ui_set_next_pref_height(ui_px(view->panel_dim.y, 1.f));
-    UI_Box *editor_body = ui_make_box_from_string(box_str, UI_BOX_NIL);
+    UI_Box *editor_body = ui_make_box_from_stringf(UI_BOX_NIL, "edit_body_%s", view->buffer->file_name);
     UI_Box *code_body = nullptr;
     UI_Box *bottom_bar = nullptr;
-    UI_Signal signal;
+    UI_Signal signal{};
 
     //@Note Code view
     UI_Parent(editor_body)
     UI_TextAlignment(UI_TEXT_ALIGN_LEFT)
+    UI_Font(default_fonts[FONT_DEFAULT])
     {
-        // ui_set_next_font_face(view->face);
+        ui_set_next_font_face(view->face);
         ui_set_next_pref_width(ui_px(view->panel_dim.x, 1.f));
         ui_set_next_pref_height(ui_px(view->panel_dim.y - 1.5f * view->face->glyph_height, 1.f));
-        code_body = ui_make_box_from_string(view->buffer->file_name, UI_BOX_CLICKABLE | UI_BOX_KEYBOARD_INPUT | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT);
+        code_body = ui_make_box_from_string(UI_BOX_CLICKABLE | UI_BOX_KEYBOARD_INPUT | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, view->buffer->file_name);
         signal = ui_signal_from_box(code_body);
 
         //@Note File bar
         ui_set_next_pref_width(ui_pct(1.f, 1.f));
         ui_set_next_pref_height(ui_text_dim(2.f, 1.f));
         ui_set_next_background_color(V4(.94f, .94f, .94f, 1.f));
-        String8 str = str8_concat(ui_build_arena(), str8_lit("bottom_bar_"), view->buffer->file_name);
-        bottom_bar = ui_make_box_from_string(str, UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT);
-        ui_set_string(bottom_bar, view->buffer->file_name);
+        bottom_bar = ui_make_box_from_stringf(UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, "bottom_bar_%s", view->buffer->file_name);
+        String8 file_bar_string = str8_copy(ui_build_arena(), view->buffer->file_name);
+        ui_set_string(bottom_bar, file_bar_string);
     }
 
     view->active_text_input = signal.text;
@@ -389,7 +395,7 @@ internal void gui_file_system_update(GUI_File_System *fs) {
     ui_set_next_fixed_width(dim.x);
     ui_set_next_fixed_height(dim.y);
     ui_set_next_child_layout(AXIS_Y);
-    UI_Box *fs_container = ui_make_box_from_string(str8_lit("file_system"), UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT);
+    UI_Box *fs_container = ui_make_box_from_string(UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, str8_lit("file_system"));
     ui_set_string(fs_container, str8_lit("Navigate to File"));
 
     UI_BackgroundColor(V4(.4f, .4f, .4f, 1.f))
@@ -415,8 +421,10 @@ internal void gui_file_system_update(GUI_File_System *fs) {
                 }
             } else if (prompt_sig.key == OS_KEY_ENTER) {
                 String8 file_path = str8_copy(scratch, str8(fs->path_buffer, fs->path_len));
-                view->buffer = make_buffer(file_path);
-                find_file_exit();
+                if (os_file_exists(file_path)) {
+                    view->buffer = make_buffer(file_path);
+                    find_file_exit();
+                }
             } else if (prompt_sig.key == OS_KEY_ESCAPE) {
                 find_file_exit();
             }
@@ -437,15 +445,13 @@ internal void gui_file_system_update(GUI_File_System *fs) {
     }
 }
 
-
 internal void draw_ui_box(UI_Box *box) {
-    r_d3d11_state->current_texture = box->font_face->texture;
     if (box->flags & UI_BOX_DRAW_BACKGROUND) {
         draw_rect(box->rect, box->background_color);
     }
-    // if (box->flags & UI_BOX_DRAW_BORDER) {
-    //     draw_rect_outline(box->rect, box->border_color);
-    // }
+    if (box->flags & UI_BOX_DRAW_BORDER) {
+        // draw_rect_outline(box->rect, box->border_color);
+    }
     if (box->flags & UI_BOX_DRAW_TEXT) {
         v2 text_position = ui_get_text_position(box);
         text_position += box->view_offset;
@@ -465,11 +471,6 @@ internal void draw_ui_layout(UI_Box *box) {
     }
 }
 
-global u8 edit_buffer[255];
-global u64 edit_cap = 255;
-global u64 edit_pos = 0;
-global u64 edit_count = 0;
-
 internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handle, f32 dt) {
     ui_begin_build(dt, window_handle, os_events);
 
@@ -477,7 +478,7 @@ internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handl
     ui_set_next_child_layout(AXIS_X);
     ui_set_next_pref_width(ui_px(window_dim.x, 1.f));
     ui_set_next_pref_height(ui_px(window_dim.y, 1.f));
-    UI_Box *main_body = ui_make_box_from_string(str8_lit("main_code_body"), UI_BOX_NIL);
+    UI_Box *main_body = ui_make_box_from_string(UI_BOX_NIL, str8_lit("main_code_body"));
     // printf("%d\n", main_body->box_id);
 
     //@Note Default the focus to the first view
@@ -496,10 +497,6 @@ internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handl
         for (View *view = hoc_app->views.first; view; view = view->next) {
             gui_view(view);
         }
-
-        // ui_set_next_pref_width(ui_px(280.f, 1.f));
-        // ui_set_next_pref_height(ui_px(40.f, 1.f));
-        // ui_line_edit(str8_lit("line_edit_"), edit_buffer, edit_cap, &edit_pos, &edit_count);
     }
 
     if (hoc_app->active_gui == GUI_FILE_SYSTEM) {
@@ -540,7 +537,7 @@ internal OS_Key search_os_key_from_string(String8 key_name) {
     OS_Key result = OS_KEY_NIL;
     for (u64 i = 0; i < ArrayCount(os_key_names); i++) {
         String8 name = os_key_names[i];
-        if (str8_eq(key_name, name)) {
+        if (str8_match(key_name, name)) {
             result = (OS_Key)i;
             break;
         }
@@ -552,7 +549,7 @@ internal Hoc_Command search_hoc_command_from_string(String8 name) {
     Hoc_Command result = {str8_lit("nil_command"), nil_command};
     for (u64 i = 0; i < ArrayCount(hoc_commands); i++) {
         Hoc_Command *cmd = &hoc_commands[i];
-        if (str8_eq(name, cmd->name)) {
+        if (str8_match(name, cmd->name)) {
             result = *cmd;
             break;
         }
@@ -596,11 +593,11 @@ internal Key_Map *load_key_map(Arena *arena, String8 file_name) {
         while (peek_token(&lexer).type == Token_Comma) {
             expect_token(&lexer, Token_Comma);
             Token key_mod = get_token(&lexer);
-            if (str8_eq(key_mod.literal, str8_lit("Control"))) {
+            if (str8_match(key_mod.literal, str8_lit("Control"))) {
                 key_value |= KEY_MOD_CONTROL;
-            } else if (str8_eq(key_mod.literal, str8_lit("Alt"))) {
+            } else if (str8_match(key_mod.literal, str8_lit("Alt"))) {
                 key_value |= KEY_MOD_ALT;
-            } else if (str8_eq(key_mod.literal, str8_lit("Shift"))) {
+            } else if (str8_match(key_mod.literal, str8_lit("Shift"))) {
                 key_value |= KEY_MOD_SHIFT;
             } else {
                 key_value |= (u16)search_os_key_from_string(key_mod.literal);
@@ -686,7 +683,8 @@ int main(int argc, char **argv) {
     hoc_app = make_hoc_application();
     ui_set_state(ui_state_new());
 
-    default_font_face = load_font_face(str8_lit("fonts/consolas.ttf"), 13);
+    default_fonts[FONT_DEFAULT] = load_font_face(str8_lit("fonts/consolas.ttf"), 16);
+    default_fonts[FONT_CODE] = load_font_face(str8_lit("fonts/LiberationMono.ttf"), 14);
 
     key_map_arena = make_arena(get_malloc_allocator());
     default_key_map = load_key_map(key_map_arena, str8_lit("data/bindings.hoc"));
@@ -697,7 +695,7 @@ int main(int argc, char **argv) {
     View *default_view = view_new();
     default_view->buffer = make_buffer(file_name);
     default_view->key_map = default_key_map;
-    default_view->face = default_font_face;
+    default_view->face = default_fonts[FONT_CODE];
     push_view(default_view);
     push_buffer(default_view->buffer);
     default_view->panel_dim = V2(1000.f, 600.f);
@@ -756,18 +754,21 @@ int main(int argc, char **argv) {
         r_d3d11_state->device_context->OMSetDepthStencilState(r_d3d11_state->depth_stencil_state, 0);
         r_d3d11_state->device_context->OMSetRenderTargets(1, &r_d3d11_state->render_target_view, r_d3d11_state->depth_stencil_view);
 
+        draw_begin();
+
+
         update_and_render(&win32_events, window_handle, dt);
 
-        d3d11_render();
+        d3d11_render(draw_bucket);
 
         r_d3d11_state->swap_chain->Present(1, 0);
-
-        r_d3d11_state->ui_vertices.reset_count();
 
         win32_events.first = nullptr;
         win32_events.last = nullptr;
         win32_events.count = 0;
         arena_clear(win32_event_arena);
+
+        draw_end();
 
         s64 end_clock = get_wall_clock();
         dt = get_seconds_elapsed(last_clock, end_clock);
@@ -776,6 +777,5 @@ int main(int argc, char **argv) {
         #endif
         last_clock = end_clock;
     }
-
     return 0;
 }
