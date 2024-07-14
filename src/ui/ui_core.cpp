@@ -1,5 +1,9 @@
 global UI_State *ui_state;
 
+internal f32 ui_animation_dt() {
+    return ui_state->animation_dt;
+}
+
 internal void ui_set_state(UI_State *state) {
     ui_state = state;
 }
@@ -314,7 +318,7 @@ internal UI_Box *ui_make_box_from_string(UI_Box_Flags flags, String8 string) {
 internal UI_Box *ui_make_box_from_stringf(UI_Box_Flags flags, char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    String8 string = str8_pushf(ui_build_arena(), fmt, args);
+    String8 string = str8_pushfv(ui_build_arena(), fmt, args);
     va_end(args);
     UI_Box *box = ui_make_box_from_string(flags, string);
     return box;
@@ -501,22 +505,23 @@ internal void ui_layout_resolve_violations(UI_Box *box, Axis2 axis) {
 }
 
 internal void ui_layout_place_boxes(UI_Box *box, Axis2 axis) {
-    if (box->parent) {
-        UI_Box *parent = box->parent;
-        //@Note Do not calculate position if box is floating
+    f32 p = 0.f;
+    UI_Box *parent = box->parent;
+    if (parent) {
+        p = parent->fixed_position[axis];
         if (!(box->flags & (UI_BOX_FLOATING_X << axis))) {
-            box->fixed_position[axis] = parent->fixed_position[axis];
             //@Note Add up sibling sizes if on the layout axis, so that we "grow" in the layout
             if (axis == parent->child_layout_axis) {
                 for (UI_Box *sibling = parent->first; sibling != box; sibling = sibling->next) {
-                    box->fixed_position[axis] += sibling->fixed_size[axis];
+                    p += sibling->fixed_size[axis];
                 }
             }
-
         }
     }
-    box->rect.p0[axis] = box->fixed_position[axis];
-    box->rect.p1[axis] = box->fixed_position[axis] + box->fixed_size[axis];
+    p += box->fixed_position[axis];
+
+    box->rect.p0[axis] = p;
+    box->rect.p1[axis] = p + box->fixed_size[axis];
     
     for (UI_Box *child = box->first; child != nullptr; child = child->next) {
         ui_layout_place_boxes(child, axis);
@@ -560,7 +565,7 @@ internal void ui_begin_build(f32 animation_dt, OS_Handle window_handle, OS_Event
     for (OS_Event *event = events->first; event; event = event->next) {
         switch (event->type) {
         default:
-            assert(0);
+            Assert(0);
             break;
         case OS_EVENT_MOUSEMOVE:
             ui_state->mouse_position.x = (f32)event->pos.x;

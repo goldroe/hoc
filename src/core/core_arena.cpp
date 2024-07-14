@@ -24,7 +24,7 @@ internal ALLOC_COMMIT_SIG(malloc_allocator_commit) {
 }
 
 internal ALLOC_RELEASE_SIG(malloc_allocator_release) {
-    assert(address);
+    Assert(address);
     free(address);
 }
 
@@ -105,7 +105,7 @@ internal void arena_pop_to(Arena *arena, u64 pos) {
         arena_release(current);
         current = prev;
     }
-    assert(current);
+    Assert(current);
     current->pos = pos;
     arena->current = current;
 }

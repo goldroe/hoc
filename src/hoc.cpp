@@ -29,6 +29,8 @@
 #include "draw.h"
 #include "hoc.h"
 #include "hoc/hoc_buffer.h"
+#include "hoc/hoc_editor.h"
+#include "hoc/hoc_app.h"
 
 #include "core/core_math.cpp"
 #include "core/core_arena.cpp"
@@ -41,14 +43,14 @@
 #include "draw.cpp"
 #include "ui/ui_core.cpp"
 #include "ui/ui_widgets.cpp"
+#include "hoc/hoc_app.cpp"
 #include "hoc/hoc_buffer.cpp"
+#include "hoc/hoc_editor.cpp"
 #include "hoc_commands.cpp"
 #include "generated_hoc_commands.cpp"
 
 global bool window_should_close;
 global s64 performance_frequency;
-
-global Hoc_Application *hoc_app;
 
 global Arena *win32_event_arena;
 global OS_Event_List win32_events;
@@ -59,43 +61,70 @@ global Key_Map *find_file_key_map;
 
 global GUI_File_System gui_file_system;
 
-internal void set_active_gui(GUI_View gui) {
-    hoc_app->active_gui = gui;
+internal void remove_gui_view(GUI_View *view) {
+    GUI_View_List *views = &hoc_app->gui_views;
+    GUI_View *prev = view->prev;
+    GUI_View *next = view->next;
+    if (prev) prev->next = next;
+    if (next) next->prev = prev;
+    
+    if (views->first == view && views->last == view) {
+        views->first = nullptr;
+        views->last = nullptr;
+    } else if (views->first == view) {
+        views->first = next;
+    } else if (views->last == view) {
+        views->last = prev;
+    }
+    views->count -= 1;
 }
 
-internal void push_view(View *view) {
-    if (hoc_app->views.first) {
-        view->prev = hoc_app->views.last;
-        hoc_app->views.last->next = view;
-        hoc_app->views.last = view;
+internal void push_gui_view(GUI_View *view) {
+    if (hoc_app->gui_views.first) {
+        view->prev = hoc_app->gui_views.last;
+        hoc_app->gui_views.last->next = view;
     } else {
-        hoc_app->views.first = hoc_app->views.last = view;
+        hoc_app->gui_views.first = view;
     }
+    hoc_app->gui_views.last = view;
+    hoc_app->gui_views.count += 1;
 }
 
-internal void push_buffer(Buffer *buffer) {
-    if (hoc_app->buffers.first) {
-        buffer->prev = hoc_app->buffers.last;
-        hoc_app->buffers.last->next = buffer;
-        hoc_app->buffers.last = buffer;
-    } else {
-        hoc_app->buffers.first = hoc_app->buffers.last = buffer;
-    }
+internal GUI_View *make_gui_view() {
+    Core_Allocator *allocator = get_malloc_allocator();
+    GUI_View *view = (GUI_View *)arena_alloc(allocator, sizeof(GUI_View));
+    view->id = hoc_app->view_id_counter++;
+    view->prev = nullptr;
+    view->next = nullptr;
+    push_gui_view(view);
+    return view;
+}
+
+internal GUI_View *make_gui_editor() {
+    GUI_View *view = make_gui_view();
+    view->type = GUI_VIEW_EDITOR;
+    view->editor.editor = make_editor();
+    return view;
+}
+
+internal GUI_View *make_gui_file_system() {
+    GUI_View *view = make_gui_view();
+    Arena *arena = make_arena(get_malloc_allocator());
+    view->type = GUI_VIEW_FILE_SYSTEM;
+    view->fs = {};
+    view->fs.arena = arena;
+    return view;
 }
 
 internal void quit_hoc_application() {
     window_should_close = true;
 }
 
-internal View *get_active_view() {
-    View *result = hoc_app->active_view;
-    return result;
-}
-
 internal Hoc_Application *make_hoc_application() {
     Arena *arena = make_arena(get_malloc_allocator());
     Hoc_Application *app = push_array(arena, Hoc_Application, 1);
     app->arena = arena;
+    app->buffer_id_counter = 0;
     app->view_id_counter = 0;
     return app;
 }
@@ -222,13 +251,13 @@ internal LRESULT CALLBACK window_proc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM
     return result;
 }
 
-inline s64 get_wall_clock() {
+internal inline s64 get_wall_clock() {
     LARGE_INTEGER result;
     QueryPerformanceCounter(&result);
     return (s64)result.QuadPart;
 }
 
-inline f32 get_seconds_elapsed(s64 start, s64 end) {
+internal inline f32 get_seconds_elapsed(s64 start, s64 end) {
     f32 result = ((f32)(end - start) / (f32)performance_frequency);
     return result;
 }
@@ -241,33 +270,36 @@ internal u16 os_key_to_key_mapping(OS_Key key, OS_Event_Flags modifiers) {
     return result;
 }
 
-internal Cursor get_cursor_from_mouse(View *view, v2 mouse) {
+internal Cursor editor_mouse_to_cursor(GUI_Editor *gui_editor, v2 mouse) {
+    Hoc_Editor *editor = gui_editor->editor;
+    
     //@Todo support non-mono fonts
     Cursor result{};
-    f32 y = mouse.y - view->box->view_offset.y;
-    f32 x = mouse.x - view->box->view_offset.x;
-    s64 line = (s64)(y / view->box->font_face->glyph_height);
-    s64 col = (s64)(x / view->box->font_face->glyph_width);
-    if (line >= buffer_get_line_count(view->buffer)) {
-        result = get_cursor_from_position(view->buffer, buffer_get_length(view->buffer));
+    f32 y = mouse.y - gui_editor->box->view_offset.y;
+    f32 x = mouse.x - gui_editor->box->view_offset.x;
+    s64 line = (s64)(y / gui_editor->box->font_face->glyph_height);
+    s64 col = (s64)(x / gui_editor->box->font_face->glyph_width);
+    if (line >= buffer_get_line_count(editor->buffer)) {
+        result = get_cursor_from_position(editor->buffer, buffer_get_length(editor->buffer));
     } else {
-        line = Clamp(line, 0, buffer_get_line_count(view->buffer) - 1);
-        col = Clamp(col, 0, buffer_get_line_length(view->buffer, line));
-        s64 position = get_position_from_line(view->buffer, line) + col;
-        position = ClampTop(position, get_position_from_line(view->buffer, line + 1) - 1);
-        result = get_cursor_from_position(view->buffer, position);
+        line = Clamp(line, 0, buffer_get_line_count(editor->buffer) - 1);
+        col = Clamp(col, 0, buffer_get_line_length(editor->buffer, line));
+        s64 position = get_position_from_line(editor->buffer, line) + col;
+        position = ClampTop(position, get_position_from_line(editor->buffer, line + 1) - 1);
+        result = get_cursor_from_position(editor->buffer, position);
     }
     return result;
 }
 
-struct UI_View_Draw_Data {
-    View *view;
+
+struct Editor_Draw_Data {
+    Hoc_Editor *editor;
 };
 
-internal UI_BOX_CUSTOM_DRAW_PROC(draw_gui_view) {
-    UI_View_Draw_Data *draw_data = (UI_View_Draw_Data *)user_data;
+internal UI_BOX_CUSTOM_DRAW_PROC(draw_gui_editor) {
+    Editor_Draw_Data *draw_data = (Editor_Draw_Data *)user_data;
     String8 string_before_cursor = box->string;
-    string_before_cursor.count = draw_data->view->cursor.position;
+    string_before_cursor.count = draw_data->editor->cursor.position;
 
     draw_rect(box->rect, box->background_color);
 
@@ -275,174 +307,37 @@ internal UI_BOX_CUSTOM_DRAW_PROC(draw_gui_view) {
     text_position += box->view_offset;
     draw_string(box->string, box->font_face, box->text_color, text_position);
 
-    v2 c_pos = box->rect.p0 + measure_string_size(string_before_cursor, box->font_face) + box->view_offset;
-    Rect c_rect = make_rect(c_pos.x, c_pos.y, 2.f, box->font_face->glyph_height);
+    v2 cursor_pos = box->rect.p0 + measure_string_size(string_before_cursor, box->font_face) + box->view_offset;
+    Rect cursor_rect = make_rect(cursor_pos.x, cursor_pos.y, 2.f, box->font_face->glyph_height);
+    v4 cursor_color = box->text_color;
+    // cursor_color *= (1.f - draw_data->editor->cursor_dt);
+    // draw_data->editor->cursor_dt += ui_animation_dt();
+    // draw_data->editor->cursor_dt = ClampBot(draw_data->editor->cursor_dt, 0.f);
     if (box->hash == ui_focus_active_id()) {
-        draw_rect(c_rect, box->text_color);
+        draw_rect(cursor_rect, cursor_color);
     } else {
-        draw_rect_outline(c_rect, box->text_color);
+        draw_rect_outline(cursor_rect, cursor_color);
     }
-}
-
-internal void gui_view(View *view) {
-    //@Note Code body
-    ui_set_next_child_layout(AXIS_Y);
-    ui_set_next_pref_width(ui_px(view->panel_dim.x, 1.f));
-    ui_set_next_pref_height(ui_px(view->panel_dim.y, 1.f));
-    UI_Box *editor_body = ui_make_box_from_stringf(UI_BOX_NIL, "edit_body_%s", view->buffer->file_name);
-    UI_Box *code_body = nullptr;
-    UI_Box *bottom_bar = nullptr;
-    UI_Signal signal{};
-
-    //@Note Code view
-    UI_Parent(editor_body)
-    UI_TextAlignment(UI_TEXT_ALIGN_LEFT)
-    UI_Font(default_fonts[FONT_DEFAULT])
-    {
-        ui_set_next_font_face(view->face);
-        ui_set_next_pref_width(ui_px(view->panel_dim.x, 1.f));
-        ui_set_next_pref_height(ui_px(view->panel_dim.y - 1.5f * view->face->glyph_height, 1.f));
-        code_body = ui_make_box_from_string(UI_BOX_CLICKABLE | UI_BOX_KEYBOARD_INPUT | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, view->buffer->file_name);
-        signal = ui_signal_from_box(code_body);
-
-        //@Note File bar
-        ui_set_next_pref_width(ui_pct(1.f, 1.f));
-        ui_set_next_pref_height(ui_text_dim(2.f, 1.f));
-        ui_set_next_background_color(V4(.94f, .94f, .94f, 1.f));
-        bottom_bar = ui_make_box_from_stringf(UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, "bottom_bar_%s", view->buffer->file_name);
-        String8 file_bar_string = str8_copy(ui_build_arena(), view->buffer->file_name);
-        ui_set_string(bottom_bar, file_bar_string);
-    }
-
-    view->active_text_input = signal.text;
-    view->box = code_body;
-
-    if (ui_clicked(signal)) {
-        hoc_app->active_view = view;
-    }
-
-
-    if (ui_focus_active_id() == code_body->hash) {
-        if (ui_pressed(signal)) {
-            u16 key = os_key_to_key_mapping(signal.key, signal.key_modifiers);
-            if (key && signal.key) {
-                view->key_map->mappings[key].procedure();
-            }
-        }
-
-        if (ui_clicked(signal)) {
-            // printf("%f %f\n", ui_state->mouse_position.x, ui_state->mouse_position.y);
-            Cursor cursor = get_cursor_from_mouse(view, ui_state->mouse_position);
-            view_set_cursor(view, cursor);
-        }
-    }
-
-    if (signal.scroll.y != 0) {
-        // box->view_offset_target.y = box->view_offset.y + view->face->glyph_height*signal.scroll.y;
-        code_body->view_offset_target.y += 2.f * view->face->glyph_height*signal.scroll.y;
-        // code_body->view_offset_target.y = Clamp(code_body->view_offset_target.y, 0.f, buffer_get_line_count(view->buffer));
-    }
-
-    ui_set_string(code_body, buffer_to_string(ui_build_arena(), view->buffer));
-
-    UI_View_Draw_Data *view_draw_data = push_array(ui_build_arena(), UI_View_Draw_Data, 1);
-    view_draw_data->view = view;
-    code_body->custom_draw_proc = draw_gui_view;
-    code_body->box_draw_data = (void *)view_draw_data;
 }
 
 internal void gui_file_system_load_files(GUI_File_System *fs) {
     printf("LOAD FILES\n");
-    if (fs->file_arena == nullptr) fs->file_arena = make_arena(get_malloc_allocator());
     Arena *scratch = make_arena(get_malloc_allocator());
 
     String8 find_path = str8_copy(scratch, str8(fs->path_buffer, fs->path_len));
     Find_File_Data file_data{};
-    OS_Handle find_handle = find_first_file(fs->file_arena, find_path, &file_data);
+    OS_Handle find_handle = find_first_file(fs->arena, find_path, &file_data);
     fs->sub_file_count = 0;
     if (os_valid_handle(find_handle)) {
         do {
-            fs->sub_file_paths[fs->sub_file_count] = str8_copy(fs->file_arena, file_data.file_name);
+            fs->sub_file_paths[fs->sub_file_count] = str8_copy(fs->arena, file_data.file_name);
             fs->sub_file_count += 1;
-        } while (find_next_file(fs->file_arena, find_handle, &file_data));
+        } while (find_next_file(fs->arena, find_handle, &file_data));
         find_close(find_handle);
     } else {
         printf("failed find_first_file\n");
     }
     arena_release(scratch);
-}
-
-internal void gui_file_system_start(String8 initial_path) {
-    GUI_File_System *fs = &gui_file_system;
-    MemoryCopy(fs->path_buffer, initial_path.data, initial_path.count);
-    fs->path_len = initial_path.count;
-    fs->path_pos = fs->path_len;
-    gui_file_system_load_files(fs);
-}
-
-internal void gui_file_system_update(GUI_File_System *fs) {
-    View *view = get_active_view();
-    // v2 root_dim = ui_get_root()->fixed_size;
-    v2 root_dim = view->panel_dim;
-    v2 dim = V2(600.f, 400.f);
-    v2 p = V2(.5f * root_dim.x - .5f * dim.x, .5f * root_dim.y - .5f * dim.y);
-
-    ui_set_next_text_color(V4(.4f, .4f, .4f, 1.f));
-    ui_set_next_background_color(V4(.2f, .2f, .2f, 1.f));
-    ui_set_next_border_color(V4(.4f, .4f, .4f, 1.f));
-    ui_set_next_fixed_x(p.x);
-    ui_set_next_fixed_y(p.y);
-    ui_set_next_fixed_width(dim.x);
-    ui_set_next_fixed_height(dim.y);
-    ui_set_next_child_layout(AXIS_Y);
-    UI_Box *fs_container = ui_make_box_from_string(UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, str8_lit("file_system"));
-    ui_set_string(fs_container, str8_lit("Navigate to File"));
-
-    UI_BackgroundColor(V4(.4f, .4f, .4f, 1.f))
-    UI_TextColor(V4(.2f, .2f, .2f, 1.f))
-    UI_BorderColor(V4(.2f, .2f, .2f, 1.f))
-    UI_Parent(fs_container)
-    UI_PrefWidth(ui_pct(1.f, 1.f))
-    UI_PrefHeight(ui_text_dim(2.f, 1.f))
-    {
-        UI_Signal prompt_sig = ui_line_edit(str8_lit("Navigate to File"), fs->path_buffer, 2048, &fs->path_pos, &fs->path_len);
-        if (!prompt_sig.box->string.count) {
-            ui_set_string(prompt_sig.box, str8_lit("Navigate to File"));
-        }
-
-        Arena *scratch = make_arena(get_malloc_allocator());
-        if (ui_pressed(prompt_sig)) {
-            if (prompt_sig.key == OS_KEY_SLASH || prompt_sig.key == OS_KEY_BACKSLASH) {
-                gui_file_system_load_files(fs);
-            } else if (prompt_sig.key == OS_KEY_BACKSPACE) {
-                u8 last = fs->path_len > 0 ? fs->path_buffer[fs->path_len - 1] : 0;
-                if (last == '\\' || last == '/') {
-                    gui_file_system_load_files(fs);
-                }
-            } else if (prompt_sig.key == OS_KEY_ENTER) {
-                String8 file_path = str8_copy(scratch, str8(fs->path_buffer, fs->path_len));
-                if (os_file_exists(file_path)) {
-                    view->buffer = make_buffer(file_path);
-                    find_file_exit();
-                }
-            } else if (prompt_sig.key == OS_KEY_ESCAPE) {
-                find_file_exit();
-            }
-        }
-        
-        for (int i = 0; i < fs->sub_file_count; i++) {
-            String8 sub_path = fs->sub_file_paths[i];
-            if (ui_clicked(ui_button(sub_path))) {
-                //@Todo use a set normalized path for this, not current prompt path
-                String8 file_path = str8(fs->path_buffer, fs->path_len);
-                file_path = str8_concat(scratch, file_path, sub_path);
-                // printf("CLICKED %s\n", file_path.data);
-                view->buffer = make_buffer(file_path);
-                find_file_exit();
-            }
-        }
-        arena_release(scratch);
-    }
 }
 
 internal void draw_ui_box(UI_Box *box) {
@@ -471,6 +366,155 @@ internal void draw_ui_layout(UI_Box *box) {
     }
 }
 
+internal void gui_view_update(GUI_View *view) {
+    switch (view->type) {
+    case GUI_VIEW_NIL:
+        Assert(0);
+        break;
+
+    case GUI_VIEW_EDITOR:
+    {
+        GUI_Editor *gui_editor = &view->editor;
+        Hoc_Editor *editor = gui_editor->editor;
+
+        //@Note Code body
+        ui_set_next_child_layout(AXIS_Y);
+        ui_set_next_pref_width(ui_px(gui_editor->panel_dim.x, 1.f));
+        ui_set_next_pref_height(ui_px(gui_editor->panel_dim.y, 1.f));
+        UI_Box *editor_body = ui_make_box_from_stringf(UI_BOX_NIL, "edit_body_%s", editor->buffer->file_name);
+        UI_Box *code_body = nullptr;
+        UI_Box *bottom_bar = nullptr;
+        UI_Signal signal{};
+
+        //@Note Code Editor
+        UI_Parent(editor_body)
+            UI_TextAlignment(UI_TEXT_ALIGN_LEFT)
+            UI_Font(default_fonts[FONT_DEFAULT])
+        {
+            ui_set_next_font_face(editor->face);
+            ui_set_next_pref_width(ui_px(gui_editor->panel_dim.x, 1.f));
+            ui_set_next_pref_height(ui_px(gui_editor->panel_dim.y - 1.5f * editor->face->glyph_height, 1.f));
+            code_body = ui_make_box_from_stringf(UI_BOX_CLICKABLE | UI_BOX_KEYBOARD_INPUT | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, "code_view_%s", editor->buffer->file_name);
+            signal = ui_signal_from_box(code_body);
+
+            //@Note File bar
+            ui_set_next_pref_width(ui_pct(1.f, 1.f));
+            ui_set_next_pref_height(ui_text_dim(2.f, 1.f));
+            ui_set_next_background_color(V4(.94f, .94f, .94f, 1.f));
+            bottom_bar = ui_make_box_from_stringf(UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, "bottom_bar_%s", editor->buffer->file_name);
+            int hour, minute, second;
+            os_local_time(&hour, &minute, &second);
+            String8 file_bar_string = str8_pushf(ui_build_arena(), "-\\**-  %s  (%lld,%lld) %d:%d", editor->buffer->file_name.data, editor->cursor.line, editor->cursor.col, hour, minute);
+            ui_set_string(bottom_bar, file_bar_string);
+        }
+
+        gui_editor->active_text_input = signal.text;
+        gui_editor->box = code_body;
+
+        if (ui_focus_active_id() == code_body->hash) {
+            if (ui_pressed(signal)) {
+                u16 key = os_key_to_key_mapping(signal.key, signal.key_modifiers);
+                if (key && signal.key) {
+                    view->key_map->mappings[key].procedure(view);
+                }
+            }
+
+            if (ui_clicked(signal)) {
+                Cursor cursor = editor_mouse_to_cursor(gui_editor, ui_state->mouse_position);
+                editor_set_cursor(editor, cursor);
+            }
+        }
+
+        if (signal.scroll.y != 0) {
+            code_body->view_offset_target.y += 2.f * editor->face->glyph_height*signal.scroll.y;
+        }
+
+        ui_set_string(code_body, buffer_to_string(ui_build_arena(), editor->buffer));
+
+        Editor_Draw_Data *editor_draw_data = push_array(ui_build_arena(), Editor_Draw_Data, 1);
+        editor_draw_data->editor = editor;
+        code_body->custom_draw_proc = draw_gui_editor;
+        code_body->box_draw_data = (void *)editor_draw_data;
+        break;
+    }
+
+    case GUI_VIEW_FILE_SYSTEM:
+    {
+        GUI_File_System *fs = &view->fs;
+        GUI_Editor *gui_editor = fs->current_editor;
+        
+        // v2 root_dim = ui_get_root()->fixed_size;
+        v2 root_dim = gui_editor->panel_dim;
+        v2 dim = V2(600.f, 400.f);
+        v2 p = V2(.5f * root_dim.x - .5f * dim.x, .5f * root_dim.y - .5f * dim.y);
+
+        ui_set_next_text_color(V4(.4f, .4f, .4f, 1.f));
+        ui_set_next_background_color(V4(.2f, .2f, .2f, 1.f));
+        ui_set_next_border_color(V4(.4f, .4f, .4f, 1.f));
+        ui_set_next_fixed_x(p.x);
+        ui_set_next_fixed_y(p.y);
+        ui_set_next_fixed_width(dim.x);
+        ui_set_next_fixed_height(dim.y);
+        ui_set_next_child_layout(AXIS_Y);
+        UI_Box *fs_container = ui_make_box_from_stringf(UI_BOX_DRAW_BACKGROUND, "file_system_%d", view->id);
+
+        bool kill_file_system = false;
+
+        UI_BackgroundColor(V4(.4f, .4f, .4f, 1.f))
+            UI_TextColor(V4(.2f, .2f, .2f, 1.f))
+            UI_BorderColor(V4(.2f, .2f, .2f, 1.f))
+            UI_Parent(fs_container)
+            UI_PrefWidth(ui_pct(1.f, 1.f))
+            UI_PrefHeight(ui_text_dim(2.f, 1.f))
+        {
+            UI_Signal prompt_sig = ui_line_edit(str8_lit("Navigate to File"), fs->path_buffer, 2048, &fs->path_pos, &fs->path_len);
+            if (!prompt_sig.box->string.count) {
+                ui_set_string(prompt_sig.box, str8_lit("Navigate to File"));
+            }
+
+            Arena *scratch = make_arena(get_malloc_allocator());
+            if (ui_pressed(prompt_sig)) {
+                if (prompt_sig.key == OS_KEY_SLASH || prompt_sig.key == OS_KEY_BACKSLASH) {
+                    gui_file_system_load_files(fs);
+                } else if (prompt_sig.key == OS_KEY_BACKSPACE) {
+                    u8 last = fs->path_len > 0 ? fs->path_buffer[fs->path_len - 1] : 0;
+                    if (last == '\\' || last == '/') {
+                        gui_file_system_load_files(fs);
+                    }
+                } else if (prompt_sig.key == OS_KEY_ENTER) {
+                    String8 file_path = str8_copy(scratch, str8(fs->path_buffer, fs->path_len));
+                    if (os_file_exists(file_path)) {
+                        gui_editor->editor->buffer = make_buffer(file_path);
+                        kill_file_system = true;
+                    }
+                } else if (prompt_sig.key == OS_KEY_ESCAPE) {
+                    kill_file_system = true;
+                }
+            }
+        
+            for (int i = 0; i < fs->sub_file_count; i++) {
+                String8 sub_path = fs->sub_file_paths[i];
+                if (ui_clicked(ui_button(sub_path))) {
+                    //@Todo use a set normalized path for this, not current prompt path
+                    String8 file_path = str8(fs->path_buffer, fs->path_len);
+                    file_path = str8_concat(scratch, file_path, sub_path);
+                    // printf("CLICKED %s\n", file_path.data);
+                    gui_editor->editor->buffer = make_buffer(file_path);
+                    kill_file_system = true;
+                }
+            }
+            arena_release(scratch);
+        }
+
+        if (kill_file_system) {
+            remove_gui_view(view);
+        }
+        break;
+    }
+
+    }
+}
+
 internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handle, f32 dt) {
     ui_begin_build(dt, window_handle, os_events);
 
@@ -479,29 +523,23 @@ internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handl
     ui_set_next_pref_width(ui_px(window_dim.x, 1.f));
     ui_set_next_pref_height(ui_px(window_dim.y, 1.f));
     UI_Box *main_body = ui_make_box_from_string(UI_BOX_NIL, str8_lit("main_code_body"));
-    // printf("%d\n", main_body->box_id);
 
     //@Note Default the focus to the first view
-    if (ui_focus_active_id() == 0 && hoc_app->views.first->box) {
-        ui_set_focus_active(hoc_app->views.first->box->hash);
-    }
+    // if (ui_focus_active_id() == 0 && hoc_app->editors.first->box) {
+    //     ui_set_focus_active(hoc_app->editors.first->box->hash);
+    // }
 
     UI_Parent(main_body)
-    UI_BackgroundColor(V4(1.f, 1.f, 1.f, 1.f))
-    UI_BorderColor(V4(.2f, .19f, .18f, 1.f))
-    UI_TextColor(V4(.2f, .2f, .2f, 1.f))
-    // UI_BackgroundColor(V4(.2f, .19f, .18f, 1.f))
-    // UI_BorderColor(V4(.2f, .19f, .18f, 1.f))
-    // UI_TextColor(V4(.92f, .86f, .7f, 1.f))
+        UI_BackgroundColor(V4(1.f, 1.f, 1.f, 1.f))
+        UI_BorderColor(V4(.2f, .19f, .18f, 1.f))
+        UI_TextColor(V4(.2f, .2f, .2f, 1.f))
+        // UI_BackgroundColor(V4(.2f, .19f, .18f, 1.f))
+        // UI_BorderColor(V4(.2f, .19f, .18f, 1.f))
+        // UI_TextColor(V4(.92f, .86f, .7f, 1.f))
     {
-        for (View *view = hoc_app->views.first; view; view = view->next) {
-            gui_view(view);
+        for (GUI_View *view = hoc_app->gui_views.first; view != nullptr; view = view->next) {
+            gui_view_update(view);
         }
-    }
-
-    if (hoc_app->active_gui == GUI_FILE_SYSTEM) {
-        GUI_File_System *fs = &gui_file_system;
-        gui_file_system_update(fs);
     }
 
     ui_layout_apply(ui_state->root);
@@ -616,14 +654,6 @@ internal Key_Map *load_key_map(Arena *arena, String8 file_name) {
     return key_map;
 }
 
-internal View *view_new() {
-    Arena *arena = make_arena(get_malloc_allocator());
-    View *result = push_array(arena, View, 1);
-    result->arena = arena;
-    result->id = hoc_app->view_id_counter++;
-    return result;
-}
-
 int main(int argc, char **argv) {
     argc--; argv++;
     Arena *arg_arena = make_arena(get_malloc_allocator());
@@ -692,13 +722,12 @@ int main(int argc, char **argv) {
     Arena *string_arena = make_arena(get_malloc_allocator());
     hoc_app->current_directory = current_directory;
 
-    View *default_view = view_new();
-    default_view->buffer = make_buffer(file_name);
-    default_view->key_map = default_key_map;
-    default_view->face = default_fonts[FONT_CODE];
-    push_view(default_view);
-    push_buffer(default_view->buffer);
-    default_view->panel_dim = V2(1000.f, 600.f);
+    GUI_View *def_editor_view = make_gui_editor();
+    def_editor_view->key_map = default_key_map;
+    Hoc_Editor *def_editor = def_editor_view->editor.editor;
+    def_editor->buffer = make_buffer(file_name);
+    def_editor->face = default_fonts[FONT_CODE];
+    def_editor_view->editor.panel_dim = V2(1000.f, 600.f);
     
     // View *split_view = view_new();
     // split_view->buffer = make_buffer(str8_lit("test"));
@@ -708,7 +737,7 @@ int main(int argc, char **argv) {
     // push_buffer(split_view->buffer);
     // split_view->panel_dim = V2(900.f, 1000.f);
 
-    hoc_app->active_view = default_view;
+    // hoc_app->active_editor = default_editor;
 
     f32 dt = 0.0f;
     srand((s32)get_wall_clock());
@@ -755,7 +784,6 @@ int main(int argc, char **argv) {
         r_d3d11_state->device_context->OMSetRenderTargets(1, &r_d3d11_state->render_target_view, r_d3d11_state->depth_stencil_view);
 
         draw_begin();
-
 
         update_and_render(&win32_events, window_handle, dt);
 

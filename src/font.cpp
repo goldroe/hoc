@@ -34,8 +34,7 @@ internal Face *load_font_face(String8 font_name, int font_height) {
     float glyph_height = (float)ft_face->size->metrics.height / 64.f;
     float glyph_width = (float)(ft_face->size->metrics.max_advance) / 64.f;
 
-    // start out with white pixel
-    int atlas_width = 1;
+    int atlas_width = 0;
     int atlas_height = 0;
     int max_bmp_height = 0;
     for (u32 c = 0; c < 256; c++) {
@@ -55,14 +54,12 @@ internal Face *load_font_face(String8 font_name, int font_height) {
         }
     }
 
-    int atlas_x = 1; // white pixel
-
     FT_GlyphSlot slot = ft_face->glyph;
 
     // Pack glyph bitmaps
     int pixel_size = 4;
+    int atlas_x = 0;
     unsigned char *bitmap = (unsigned char *)calloc(atlas_width * atlas_height + atlas_height, pixel_size);
-    memset(bitmap, 0xff, pixel_size);
 
     for (u32 c = 10; c < 128; c++) {
         err = FT_Load_Char(ft_face, c, FT_LOAD_DEFAULT);

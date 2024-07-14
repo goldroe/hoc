@@ -1,6 +1,3 @@
-#define _CRT_SECURE_NO_WARNINGS
-#include <assert.h>
-
 #include "core/core.h"
 #include "core/core_arena.h"
 #include "core/core_strings.h"

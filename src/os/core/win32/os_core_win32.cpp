@@ -160,3 +160,11 @@ internal void os_close_handle(OS_Handle handle) {
 internal void os_quit(int exit_code) {
     PostQuitMessage(exit_code);
 }
+
+internal void os_local_time(int *hour, int *minute, int *second) {
+    SYSTEMTIME system_time;
+    GetLocalTime(&system_time);
+    if (hour) *hour = system_time.wHour;
+    if (minute) *minute = system_time.wMinute; 
+    if (second) *second = system_time.wSecond; 
+}

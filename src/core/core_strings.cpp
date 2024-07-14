@@ -65,7 +65,7 @@ internal bool str8_match(String8 first, String8 second) {
     return true;
 }
 
-internal String8 str8_pushf(Arena *arena, const char *fmt, va_list args) {
+internal String8 str8_pushfv(Arena *arena, const char *fmt, va_list args) {
     va_list args_;
     va_copy(args_, args);
     String8 result;
@@ -74,5 +74,17 @@ internal String8 str8_pushf(Arena *arena, const char *fmt, va_list args) {
     result.count = hoc_vsnprintf((char *)result.data, bytes, fmt, args_);
     result.data[result.count] = 0;
     va_end(args_);
+    return result;
+}
+
+internal String8 str8_pushf(Arena *arena, const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    String8 result;
+    int bytes = hoc_vsnprintf(NULL, NULL, fmt, args) + 1;
+    result.data = push_array(arena, u8, bytes);
+    result.count = hoc_vsnprintf((char *)result.data, bytes, fmt, args);
+    result.data[result.count] = 0;
+    va_end(args);
     return result;
 }

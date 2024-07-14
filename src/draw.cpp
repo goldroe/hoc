@@ -94,7 +94,7 @@ internal void draw_rect(Rect dst, v4 color) {
 
         draw_bucket->tex = nullptr;
     }
-    assert(node);
+    Assert(node);
 
     R_2D_Vertex tl = { V2(dst.x0, dst.y0), V2(0.f, 0.f), color };
     R_2D_Vertex tr = { V2(dst.x1, dst.y0), V2(0.f, 0.f), color };

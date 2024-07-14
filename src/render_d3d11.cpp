@@ -189,7 +189,7 @@ internal void d3d11_render(Draw_Bucket *draw_bucket) {
         R_Params params = batch.params;
         switch (params.type) {
         default:
-            assert(0);
+            Assert(0);
             break;
             
         case R_PARAMS_UI:

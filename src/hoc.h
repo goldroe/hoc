@@ -1,12 +1,15 @@
 #ifndef HOC_H
 #define HOC_H
 
-#define COMMAND(name) void name()
-typedef void (*Hoc_Command_Proc)(void);
+struct GUI_View;
+typedef u32 GUI_View_ID;
+
+#define HOC_COMMAND(name) void name(GUI_View *view)
+typedef HOC_COMMAND(Hoc_Command_Proc);
 
 struct Hoc_Command {
     String8 name;
-    Hoc_Command_Proc procedure;
+    Hoc_Command_Proc *procedure;
 };
 
 #define KEY_MOD_ALT 1<<10
@@ -18,52 +21,55 @@ struct Key_Map {
     Hoc_Command *mappings;
 };
 
-struct View;
-struct Buffer;
-
-enum GUI_View {
-    GUI_NIL,
-    GUI_FILE_SYSTEM,
-};
+struct Hoc_Editor;
+struct Hoc_Buffer;
 
 struct Buffer_List {
-    Buffer *first;
-    Buffer *last;
+    Hoc_Buffer *first;
+    Hoc_Buffer *last;
     int count;
 };
 
-struct View_List {
-    View *first;
-    View *last;
-    View *free_views;
+struct Editor_List {
+    Hoc_Editor *first;
+    Hoc_Editor *last;
+    Hoc_Editor *free_editors;
     int count;
 };
 
-struct Hoc_Application {
-    Arena *arena;
+enum GUI_View_Type {
+    GUI_VIEW_NIL,
+    GUI_VIEW_EDITOR,
+    GUI_VIEW_FILE_SYSTEM,
+};
 
-    String8 current_directory;
-    //@Note View and Buffer lists
-    View *active_view;
-    View_List views;
-    int view_id_counter;
-
-    Buffer_List buffers;
-    int buffer_id_counter;
-
-    GUI_View active_gui;
+struct GUI_Editor {
+    Hoc_Editor *editor;
+    UI_Box *box;
+    v2 panel_dim;
+    String8 active_text_input;
 };
 
 struct GUI_File_System {
+    Arena *arena;
+    GUI_Editor *current_editor;
     u8  path_buffer[2048];
     u64 path_len;
     u64 path_pos;
-    Arena *file_arena;
     String8 sub_file_paths[2048];
     int sub_file_count;
 };
 
-internal View *get_active_view();
-internal void quit_hoc_application();
+struct GUI_View {
+    GUI_View_ID id;
+    GUI_View *prev;
+    GUI_View *next;
+    GUI_View_Type type;
+    Key_Map *key_map;
+    union {
+        GUI_Editor editor;
+        GUI_File_System fs;
+    };
+};
 
 #endif // HOC_H
