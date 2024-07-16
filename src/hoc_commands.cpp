@@ -1,4 +1,3 @@
-
 // @todo add options for adjusting editor focus (top, center, bottom)
 // void ensure_cursor_in_editor(Editor *editor, Cursor cursor) {
 //     f32 cursor_top = cursor.line * editor->face->glyph_height - editor->editor_offset.y;
@@ -11,18 +10,24 @@
 //     }
 // }
 
-void editor_set_cursor(Hoc_Editor *editor, Cursor cursor) {
+internal void editor_set_cursor(Hoc_Editor *editor, Cursor cursor) {
     // ensure_cursor_in_editor(editor, cursor);
     editor->cursor = cursor;
 }
 
-void write_buffer(Hoc_Buffer *buffer) {
+internal void editor_move_lines(Hoc_Editor *editor, s64 lines) {
+    s64 line = editor->cursor.line + lines;
+    line = Clamp(line, 0, buffer_get_line_count(editor->buffer) - 1);
+    Cursor cursor = get_cursor_from_line(editor->buffer, line);
+    editor_set_cursor(editor, cursor);
+}
+
+internal void write_buffer(Hoc_Buffer *buffer) {
     // String8 buffer_string = buffer_to_string_apply_line_endings(buffer);
     Arena *arena = make_arena(get_malloc_allocator());
     String8 buffer_string = buffer_to_string(arena, buffer);
     OS_Handle file_handle = os_open_file(buffer->file_name, OS_ACCESS_WRITE);
     if (os_valid_handle(file_handle)) {
-        printf("%s\n", buffer_string.data);
         os_write_file(file_handle, buffer_string.data, buffer_string.count);
         os_close_handle(file_handle);
     } else {
@@ -30,7 +35,6 @@ void write_buffer(Hoc_Buffer *buffer) {
     }
     arena_release(arena);
 }
-
 
 HOC_COMMAND(nil_command) {
 }
@@ -56,14 +60,9 @@ HOC_COMMAND(self_insert) {
     }
 }
 
-
 HOC_COMMAND(quit_hoc) {
     quit_hoc_application();
 }
-
-// HOC_COMMAND(quit_selection) {
-//     get_active_editor()->mark_active = false;
-// }
 
 HOC_COMMAND(newline) {
     Assert(view->type == GUI_VIEW_EDITOR);
@@ -75,7 +74,6 @@ HOC_COMMAND(newline) {
     cursor.line++;
     editor_set_cursor(editor, cursor);
 }
-
 
 HOC_COMMAND(backward_char) {
     Assert(view->type == GUI_VIEW_EDITOR);
@@ -204,6 +202,26 @@ HOC_COMMAND(next_line) {
         Cursor cursor = get_cursor_from_position(editor->buffer, position);
         editor_set_cursor(editor, cursor);
     }
+}
+
+HOC_COMMAND(page_up) {
+    GUI_Editor *gui_editor = &view->editor;
+    Hoc_Editor *editor = gui_editor->editor;
+    s64 prev_line = editor->cursor.line;
+    editor_move_lines(editor, -20);
+    s64 lines_moved = editor->cursor.line - prev_line;
+    gui_editor->scroll_pt += lines_moved * editor->face->glyph_height;
+    // gui_editor->box->view_offset_target.y = -editor->cursor.line * gui_editor->editor->face->glyph_height;
+}
+
+HOC_COMMAND(page_down) {
+    GUI_Editor *gui_editor = &view->editor;
+    Hoc_Editor *editor = gui_editor->editor;
+    s64 prev_line = editor->cursor.line;
+    editor_move_lines(editor, 20);
+    s64 lines_moved = editor->cursor.line - prev_line;
+    gui_editor->scroll_pt += lines_moved * editor->face->glyph_height;
+    // gui_editor->box->view_offset_target.y = -editor->cursor.line * gui_editor->editor->face->glyph_height;
 }
 
 HOC_COMMAND(backward_delete_char) {
@@ -374,8 +392,4 @@ HOC_COMMAND(find_file) {
     MemoryCopy(fs->path_buffer, current_path.data, current_path.count);
     fs->path_pos = fs->path_len = current_path.count;
     gui_file_system_load_files(fs);
-}
-
-HOC_COMMAND(find_file_exit) {
-    // set_active_gui(GUI_NIL);
 }
