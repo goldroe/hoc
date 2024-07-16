@@ -88,3 +88,33 @@ internal String8 str8_pushf(Arena *arena, const char *fmt, ...) {
     va_end(args);
     return result;
 }
+
+internal String8 str8_jump(String8 string, u64 count) {
+    String8 result;
+    result.data = string.data + count;
+    result.count = string.count - count;
+    return result;
+}
+
+internal u64 str8_find_substr(String8 string, String8 substring) {
+    if (substring.count > string.count) {
+        return string.count;
+    }
+
+    u64 result = string.count;
+    for (u64 string_cursor = 0; string_cursor < string.count; string_cursor++) {
+        u64 rem = string.count - string_cursor;
+        if (rem < substring.count) {
+            break;
+        }
+        
+        if (string.data[string_cursor] == substring.data[0]) {
+            int cmp = memcmp(string.data + string_cursor, substring.data, substring.count);
+            if (cmp == 0) {
+                result = string_cursor;
+                break;
+            }
+        }
+    }
+    return result;
+}
