@@ -30,6 +30,7 @@
 #include "hoc.h"
 #include "hoc/hoc_buffer.h"
 #include "hoc/hoc_editor.h"
+#include "gui.h"
 #include "hoc/hoc_app.h"
 
 #include "core/core_math.cpp"
@@ -48,8 +49,8 @@
 #include "hoc/hoc_editor.cpp"
 #include "hoc_commands.cpp"
 #include "generated_hoc_commands.cpp"
+#include "gui.cpp"
 
-global bool window_should_close;
 global s64 performance_frequency;
 
 global Arena *win32_event_arena;
@@ -57,76 +58,111 @@ global OS_Event_List win32_events;
 
 global Arena *key_map_arena;
 global Key_Map *default_key_map;
-global Key_Map *find_file_key_map;
 
-global GUI_File_System gui_file_system;
-
-internal void remove_gui_view(GUI_View *view) {
-    GUI_View_List *views = &hoc_app->gui_views;
-    GUI_View *prev = view->prev;
-    GUI_View *next = view->next;
-    if (prev) prev->next = next;
-    if (next) next->prev = prev;
-    
-    if (views->first == view && views->last == view) {
-        views->first = nullptr;
-        views->last = nullptr;
-    } else if (views->first == view) {
-        views->first = next;
-    } else if (views->last == view) {
-        views->last = prev;
+internal bool os_key_is_ascii(OS_Key key) {
+    switch (key) {
+    default:
+        return false;
+    case OS_KEY_A: case OS_KEY_B: case OS_KEY_C: case OS_KEY_D: case OS_KEY_E: case OS_KEY_F: case OS_KEY_G: case OS_KEY_H: case OS_KEY_I: case OS_KEY_J: case OS_KEY_K: case OS_KEY_L: case OS_KEY_M: case OS_KEY_N: case OS_KEY_O: case OS_KEY_P: case OS_KEY_Q: case OS_KEY_R: case OS_KEY_S: case OS_KEY_T: case OS_KEY_U: case OS_KEY_V: case OS_KEY_W: case OS_KEY_X: case OS_KEY_Y: case OS_KEY_Z:
+    case OS_KEY_0: case OS_KEY_1: case OS_KEY_2: case OS_KEY_3: case OS_KEY_4: case OS_KEY_5: case OS_KEY_6: case OS_KEY_7: case OS_KEY_8: case OS_KEY_9:
+    case OS_KEY_SPACE:
+    case OS_KEY_COMMA:
+    case OS_KEY_PERIOD:
+    case OS_KEY_QUOTE:
+    case OS_KEY_OPENBRACKET:
+    case OS_KEY_CLOSEBRACKET:
+    case OS_KEY_SEMICOLON:
+    case OS_KEY_SLASH:
+    case OS_KEY_BACKSLASH:
+    case OS_KEY_MINUS:
+    case OS_KEY_PLUS:
+    case OS_KEY_TAB:
+    case OS_KEY_TICK:
+        return true;
     }
-    views->count -= 1;
 }
 
-internal void push_gui_view(GUI_View *view) {
-    if (hoc_app->gui_views.first) {
-        view->prev = hoc_app->gui_views.last;
-        hoc_app->gui_views.last->next = view;
+internal OS_Key search_os_key_from_string(String8 key_name) {
+    OS_Key result = OS_KEY_NIL;
+    for (u64 i = 0; i < ArrayCount(os_key_names); i++) {
+        String8 name = os_key_names[i];
+        if (str8_match(key_name, name)) {
+            result = (OS_Key)i;
+            break;
+        }
+    }
+    return result;
+}
+
+internal Hoc_Command search_hoc_command_from_string(String8 name) {
+    Hoc_Command result = {str8_lit("nil_command"), nil_command};
+    for (u64 i = 0; i < ArrayCount(hoc_commands); i++) {
+        Hoc_Command *cmd = &hoc_commands[i];
+        if (str8_match(name, cmd->name)) {
+            result = *cmd;
+            break;
+        }
+    }
+    return result;
+}
+
+internal Key_Map *load_key_map(Arena *arena, String8 file_name) {
+    Key_Map *key_map = push_array(arena, Key_Map, 1);
+    key_map->mappings = push_array(arena, Hoc_Command, MAX_KEY_MAPPINGS);
+
+    //@Note Default key mappings
+    for (int i = 0; i < MAX_KEY_MAPPINGS; i++) {
+        key_map->mappings[i] = {str8_lit("nil_command"), nil_command};
+    }
+    Hoc_Command self_insert_command = {str8_lit("self_insert"), self_insert};
+    for (int i = 0; i < (1<<8); i++) {
+        OS_Key key = (OS_Key)i;
+        if (os_key_is_ascii(key)) {
+            key_map->mappings[KEY_MOD_SHIFT|i] = self_insert_command;
+            key_map->mappings[i] = self_insert_command;
+        }
+    }
+
+    Lexer lexer = make_lexer(file_name);
+    Token token = get_token(&lexer);
+    if (token.type == Token_String) {
+        key_map->name = str8_copy(arena, token.literal);
     } else {
-        hoc_app->gui_views.first = view;
+        error(&lexer, "missing name of key map");
     }
-    hoc_app->gui_views.last = view;
-    hoc_app->gui_views.count += 1;
-}
 
-internal GUI_View *make_gui_view() {
-    Core_Allocator *allocator = get_malloc_allocator();
-    GUI_View *view = (GUI_View *)arena_alloc(allocator, sizeof(GUI_View));
-    view->id = hoc_app->view_id_counter++;
-    view->prev = nullptr;
-    view->next = nullptr;
-    push_gui_view(view);
-    return view;
-}
+    expect_token(&lexer, Token_Assign);
+    expect_token(&lexer, Token_OpenBrace);
 
-internal GUI_View *make_gui_editor() {
-    GUI_View *view = make_gui_view();
-    view->type = GUI_VIEW_EDITOR;
-    view->editor.editor = make_editor();
-    return view;
-}
+    do {
+        u16 key_value = 0;
+        String8 key_mods[3] = {};
+        expect_token(&lexer, Token_OpenBrace);
+        Token command_token = get_token(&lexer);
+        while (peek_token(&lexer).type == Token_Comma) {
+            expect_token(&lexer, Token_Comma);
+            Token key_mod = get_token(&lexer);
+            if (str8_match(key_mod.literal, str8_lit("Control"))) {
+                key_value |= KEY_MOD_CONTROL;
+            } else if (str8_match(key_mod.literal, str8_lit("Alt"))) {
+                key_value |= KEY_MOD_ALT;
+            } else if (str8_match(key_mod.literal, str8_lit("Shift"))) {
+                key_value |= KEY_MOD_SHIFT;
+            } else {
+                key_value |= (u16)search_os_key_from_string(key_mod.literal);
+            }
+        }
+        expect_token(&lexer, Token_CloseBrace);
 
-internal GUI_View *make_gui_file_system() {
-    GUI_View *view = make_gui_view();
-    Arena *arena = make_arena(get_malloc_allocator());
-    view->type = GUI_VIEW_FILE_SYSTEM;
-    view->fs = {};
-    view->fs.arena = arena;
-    return view;
-}
+        key_map->mappings[key_value] = search_hoc_command_from_string(command_token.literal);
 
-internal void quit_hoc_application() {
-    window_should_close = true;
-}
+        if (peek_token(&lexer).type != Token_Comma) break;
+        expect_token(&lexer, Token_Comma);
+    } while (token.type != Token_EOF);
+    
+    expect_token(&lexer, Token_CloseBrace);
 
-internal Hoc_Application *make_hoc_application() {
-    Arena *arena = make_arena(get_malloc_allocator());
-    Hoc_Application *app = push_array(arena, Hoc_Application, 1);
-    app->arena = arena;
-    app->buffer_id_counter = 0;
-    app->view_id_counter = 0;
-    return app;
+    return key_map;
 }
 
 internal OS_Event *win32_push_event(OS_Event_Type type) {
@@ -262,84 +298,6 @@ internal inline f32 get_seconds_elapsed(s64 start, s64 end) {
     return result;
 }
 
-internal u16 os_key_to_key_mapping(OS_Key key, OS_Event_Flags modifiers) {
-    u16 result = (u16)key;
-    result |= (modifiers & OS_EVENT_FLAG_ALT) ? KEY_MOD_ALT : 0;
-    result |= (modifiers & OS_EVENT_FLAG_CONTROL) ? KEY_MOD_CONTROL : 0;
-    result |= (modifiers & OS_EVENT_FLAG_SHIFT) ? KEY_MOD_SHIFT : 0;
-    return result;
-}
-
-internal Cursor editor_mouse_to_cursor(GUI_Editor *gui_editor, v2 mouse) {
-    Hoc_Editor *editor = gui_editor->editor;
-    
-    //@Todo support non-mono fonts
-    Cursor result{};
-    f32 y = mouse.y - gui_editor->box->view_offset.y;
-    f32 x = mouse.x - gui_editor->box->view_offset.x;
-    s64 line = (s64)(y / gui_editor->box->font_face->glyph_height);
-    s64 col = (s64)(x / gui_editor->box->font_face->glyph_width);
-    if (line >= buffer_get_line_count(editor->buffer)) {
-        result = get_cursor_from_position(editor->buffer, buffer_get_length(editor->buffer));
-    } else {
-        line = Clamp(line, 0, buffer_get_line_count(editor->buffer) - 1);
-        col = Clamp(col, 0, buffer_get_line_length(editor->buffer, line));
-        s64 position = get_position_from_line(editor->buffer, line) + col;
-        position = ClampTop(position, get_position_from_line(editor->buffer, line + 1) - 1);
-        result = get_cursor_from_position(editor->buffer, position);
-    }
-    return result;
-}
-
-
-struct Editor_Draw_Data {
-    Hoc_Editor *editor;
-};
-
-internal UI_BOX_CUSTOM_DRAW_PROC(draw_gui_editor) {
-    Editor_Draw_Data *draw_data = (Editor_Draw_Data *)user_data;
-    String8 string_before_cursor = box->string;
-    string_before_cursor.count = draw_data->editor->cursor.position;
-
-    draw_rect(box->rect, box->background_color);
-
-    v2 text_position = ui_get_text_position(box);
-    text_position += box->view_offset;
-    draw_string(box->string, box->font_face, box->text_color, text_position);
-
-    v2 cursor_pos = box->rect.p0 + measure_string_size(string_before_cursor, box->font_face) + box->view_offset;
-    Rect cursor_rect = make_rect(cursor_pos.x, cursor_pos.y, 2.f, box->font_face->glyph_height);
-    v4 cursor_color = box->text_color;
-    // cursor_color *= (1.f - draw_data->editor->cursor_dt);
-    // draw_data->editor->cursor_dt += ui_animation_dt();
-    // draw_data->editor->cursor_dt = ClampBot(draw_data->editor->cursor_dt, 0.f);
-    if (box->hash == ui_focus_active_id()) {
-        draw_rect(cursor_rect, cursor_color);
-    } else {
-        draw_rect_outline(cursor_rect, cursor_color);
-    }
-}
-
-internal void gui_file_system_load_files(GUI_File_System *fs) {
-    printf("LOAD FILES\n");
-    Arena *scratch = make_arena(get_malloc_allocator());
-
-    String8 find_path = str8_copy(scratch, str8(fs->path_buffer, fs->path_len));
-    Find_File_Data file_data{};
-    OS_Handle find_handle = find_first_file(fs->arena, find_path, &file_data);
-    fs->sub_file_count = 0;
-    if (os_valid_handle(find_handle)) {
-        do {
-            fs->sub_file_paths[fs->sub_file_count] = str8_copy(fs->arena, file_data.file_name);
-            fs->sub_file_count += 1;
-        } while (find_next_file(fs->arena, find_handle, &file_data));
-        find_close(find_handle);
-    } else {
-        printf("failed find_first_file\n");
-    }
-    arena_release(scratch);
-}
-
 internal void draw_ui_box(UI_Box *box) {
     if (box->flags & UI_BOX_DRAW_BACKGROUND) {
         draw_rect(box->rect, box->background_color);
@@ -356,162 +314,13 @@ internal void draw_ui_box(UI_Box *box) {
 
 internal void draw_ui_layout(UI_Box *box) {
     if (box->custom_draw_proc) {
-        box->custom_draw_proc(box, box->box_draw_data);
+        box->custom_draw_proc(box, box->draw_data);
     } else if (box != ui_get_root()) {
         draw_ui_box(box);
     }
 
     for (UI_Box *child = box->first; child != nullptr; child = child->next) {
         draw_ui_layout(child);
-    }
-}
-
-internal void gui_view_update(GUI_View *view) {
-    switch (view->type) {
-    case GUI_VIEW_NIL:
-        Assert(0);
-        break;
-
-    case GUI_VIEW_EDITOR:
-    {
-        GUI_Editor *gui_editor = &view->editor;
-        Hoc_Editor *editor = gui_editor->editor;
-
-        //@Note Code body
-        ui_set_next_child_layout(AXIS_Y);
-        ui_set_next_pref_width(ui_px(gui_editor->panel_dim.x, 1.f));
-        ui_set_next_pref_height(ui_px(gui_editor->panel_dim.y, 1.f));
-        UI_Box *editor_body = ui_make_box_from_stringf(UI_BOX_NIL, "edit_body_%s", editor->buffer->file_name);
-        UI_Box *code_body = nullptr;
-        UI_Box *bottom_bar = nullptr;
-        UI_Signal signal{};
-
-        //@Note Code Editor
-        UI_Parent(editor_body)
-            UI_TextAlignment(UI_TEXT_ALIGN_LEFT)
-            UI_Font(default_fonts[FONT_DEFAULT])
-        {
-            ui_set_next_font_face(editor->face);
-            ui_set_next_pref_width(ui_px(gui_editor->panel_dim.x, 1.f));
-            ui_set_next_pref_height(ui_px(gui_editor->panel_dim.y - 1.5f * editor->face->glyph_height, 1.f));
-            code_body = ui_make_box_from_stringf(UI_BOX_CLICKABLE | UI_BOX_KEYBOARD_INPUT | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, "code_view_%s", editor->buffer->file_name);
-            signal = ui_signal_from_box(code_body);
-
-            //@Note File bar
-            ui_set_next_pref_width(ui_pct(1.f, 1.f));
-            ui_set_next_pref_height(ui_text_dim(2.f, 1.f));
-            ui_set_next_background_color(V4(.94f, .94f, .94f, 1.f));
-            bottom_bar = ui_make_box_from_stringf(UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, "bottom_bar_%s", editor->buffer->file_name);
-            int hour, minute, second;
-            os_local_time(&hour, &minute, &second);
-            String8 file_bar_string = str8_pushf(ui_build_arena(), "-\\**-  %s  (%lld,%lld) %d:%d", editor->buffer->file_name.data, editor->cursor.line, editor->cursor.col, hour, minute);
-            ui_set_string(bottom_bar, file_bar_string);
-        }
-
-        gui_editor->active_text_input = signal.text;
-        gui_editor->box = code_body;
-
-        if (ui_focus_active_id() == code_body->hash) {
-            if (ui_pressed(signal)) {
-                u16 key = os_key_to_key_mapping(signal.key, signal.key_modifiers);
-                if (key && signal.key) {
-                    view->key_map->mappings[key].procedure(view);
-                }
-            }
-
-            if (ui_clicked(signal)) {
-                Cursor cursor = editor_mouse_to_cursor(gui_editor, ui_state->mouse_position);
-                editor_set_cursor(editor, cursor);
-            }
-        }
-
-        if (signal.scroll.y != 0) {
-            code_body->view_offset_target.y += 2.f * editor->face->glyph_height*signal.scroll.y;
-        }
-
-        ui_set_string(code_body, buffer_to_string(ui_build_arena(), editor->buffer));
-
-        Editor_Draw_Data *editor_draw_data = push_array(ui_build_arena(), Editor_Draw_Data, 1);
-        editor_draw_data->editor = editor;
-        code_body->custom_draw_proc = draw_gui_editor;
-        code_body->box_draw_data = (void *)editor_draw_data;
-        break;
-    }
-
-    case GUI_VIEW_FILE_SYSTEM:
-    {
-        GUI_File_System *fs = &view->fs;
-        GUI_Editor *gui_editor = fs->current_editor;
-        
-        // v2 root_dim = ui_get_root()->fixed_size;
-        v2 root_dim = gui_editor->panel_dim;
-        v2 dim = V2(600.f, 400.f);
-        v2 p = V2(.5f * root_dim.x - .5f * dim.x, .5f * root_dim.y - .5f * dim.y);
-
-        ui_set_next_text_color(V4(.4f, .4f, .4f, 1.f));
-        ui_set_next_background_color(V4(.2f, .2f, .2f, 1.f));
-        ui_set_next_border_color(V4(.4f, .4f, .4f, 1.f));
-        ui_set_next_fixed_x(p.x);
-        ui_set_next_fixed_y(p.y);
-        ui_set_next_fixed_width(dim.x);
-        ui_set_next_fixed_height(dim.y);
-        ui_set_next_child_layout(AXIS_Y);
-        UI_Box *fs_container = ui_make_box_from_stringf(UI_BOX_DRAW_BACKGROUND, "file_system_%d", view->id);
-
-        bool kill_file_system = false;
-
-        UI_BackgroundColor(V4(.4f, .4f, .4f, 1.f))
-            UI_TextColor(V4(.2f, .2f, .2f, 1.f))
-            UI_BorderColor(V4(.2f, .2f, .2f, 1.f))
-            UI_Parent(fs_container)
-            UI_PrefWidth(ui_pct(1.f, 1.f))
-            UI_PrefHeight(ui_text_dim(2.f, 1.f))
-        {
-            UI_Signal prompt_sig = ui_line_edit(str8_lit("Navigate to File"), fs->path_buffer, 2048, &fs->path_pos, &fs->path_len);
-            if (!prompt_sig.box->string.count) {
-                ui_set_string(prompt_sig.box, str8_lit("Navigate to File"));
-            }
-
-            Arena *scratch = make_arena(get_malloc_allocator());
-            if (ui_pressed(prompt_sig)) {
-                if (prompt_sig.key == OS_KEY_SLASH || prompt_sig.key == OS_KEY_BACKSLASH) {
-                    gui_file_system_load_files(fs);
-                } else if (prompt_sig.key == OS_KEY_BACKSPACE) {
-                    u8 last = fs->path_len > 0 ? fs->path_buffer[fs->path_len - 1] : 0;
-                    if (last == '\\' || last == '/') {
-                        gui_file_system_load_files(fs);
-                    }
-                } else if (prompt_sig.key == OS_KEY_ENTER) {
-                    String8 file_path = str8_copy(scratch, str8(fs->path_buffer, fs->path_len));
-                    if (os_file_exists(file_path)) {
-                        gui_editor->editor->buffer = make_buffer(file_path);
-                        kill_file_system = true;
-                    }
-                } else if (prompt_sig.key == OS_KEY_ESCAPE) {
-                    kill_file_system = true;
-                }
-            }
-        
-            for (int i = 0; i < fs->sub_file_count; i++) {
-                String8 sub_path = fs->sub_file_paths[i];
-                if (ui_clicked(ui_button(sub_path))) {
-                    //@Todo use a set normalized path for this, not current prompt path
-                    String8 file_path = str8(fs->path_buffer, fs->path_len);
-                    file_path = str8_concat(scratch, file_path, sub_path);
-                    // printf("CLICKED %s\n", file_path.data);
-                    gui_editor->editor->buffer = make_buffer(file_path);
-                    kill_file_system = true;
-                }
-            }
-            arena_release(scratch);
-        }
-
-        if (kill_file_system) {
-            remove_gui_view(view);
-        }
-        break;
-    }
-
     }
 }
 
@@ -546,112 +355,6 @@ internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handl
     draw_ui_layout(ui_state->root);
 
     ui_end_build();
-}
-
-internal bool os_key_is_ascii(OS_Key key) {
-    switch (key) {
-    default:
-        return false;
-    case OS_KEY_A: case OS_KEY_B: case OS_KEY_C: case OS_KEY_D: case OS_KEY_E: case OS_KEY_F: case OS_KEY_G: case OS_KEY_H: case OS_KEY_I: case OS_KEY_J: case OS_KEY_K: case OS_KEY_L: case OS_KEY_M: case OS_KEY_N: case OS_KEY_O: case OS_KEY_P: case OS_KEY_Q: case OS_KEY_R: case OS_KEY_S: case OS_KEY_T: case OS_KEY_U: case OS_KEY_V: case OS_KEY_W: case OS_KEY_X: case OS_KEY_Y: case OS_KEY_Z:
-    case OS_KEY_0: case OS_KEY_1: case OS_KEY_2: case OS_KEY_3: case OS_KEY_4: case OS_KEY_5: case OS_KEY_6: case OS_KEY_7: case OS_KEY_8: case OS_KEY_9:
-    case OS_KEY_SPACE:
-    case OS_KEY_COMMA:
-    case OS_KEY_PERIOD:
-    case OS_KEY_QUOTE:
-    case OS_KEY_OPENBRACKET:
-    case OS_KEY_CLOSEBRACKET:
-    case OS_KEY_SEMICOLON:
-    case OS_KEY_SLASH:
-    case OS_KEY_BACKSLASH:
-    case OS_KEY_MINUS:
-    case OS_KEY_PLUS:
-    case OS_KEY_TAB:
-    case OS_KEY_TICK:
-        return true;
-    }
-}
-
-internal OS_Key search_os_key_from_string(String8 key_name) {
-    OS_Key result = OS_KEY_NIL;
-    for (u64 i = 0; i < ArrayCount(os_key_names); i++) {
-        String8 name = os_key_names[i];
-        if (str8_match(key_name, name)) {
-            result = (OS_Key)i;
-            break;
-        }
-    }
-    return result;
-}
-
-internal Hoc_Command search_hoc_command_from_string(String8 name) {
-    Hoc_Command result = {str8_lit("nil_command"), nil_command};
-    for (u64 i = 0; i < ArrayCount(hoc_commands); i++) {
-        Hoc_Command *cmd = &hoc_commands[i];
-        if (str8_match(name, cmd->name)) {
-            result = *cmd;
-            break;
-        }
-    }
-    return result;
-}
-
-internal Key_Map *load_key_map(Arena *arena, String8 file_name) {
-    Key_Map *key_map = push_array(arena, Key_Map, 1);
-    key_map->mappings = push_array(arena, Hoc_Command, MAX_KEY_MAPPINGS);
-
-    //@Note Default key mappings
-    for (int i = 0; i < MAX_KEY_MAPPINGS; i++) {
-        key_map->mappings[i] = {str8_lit("nil_command"), nil_command};
-    }
-    Hoc_Command self_insert_command = {str8_lit("self_insert"), self_insert};
-    for (int i = 0; i < (1<<8); i++) {
-        OS_Key key = (OS_Key)i;
-        if (os_key_is_ascii(key)) {
-            key_map->mappings[KEY_MOD_SHIFT|i] = self_insert_command;
-            key_map->mappings[i] = self_insert_command;
-        }
-    }
-
-    Lexer lexer = make_lexer(file_name);
-    Token token = get_token(&lexer);
-    if (token.type == Token_String) {
-        key_map->name = str8_copy(arena, token.literal);
-    } else {
-        error(&lexer, "missing name of key map");
-    }
-
-    expect_token(&lexer, Token_Assign);
-    expect_token(&lexer, Token_OpenBrace);
-
-    do {
-        u16 key_value = 0;
-        String8 key_mods[3] = {};
-        expect_token(&lexer, Token_OpenBrace);
-        Token command_token = get_token(&lexer);
-        while (peek_token(&lexer).type == Token_Comma) {
-            expect_token(&lexer, Token_Comma);
-            Token key_mod = get_token(&lexer);
-            if (str8_match(key_mod.literal, str8_lit("Control"))) {
-                key_value |= KEY_MOD_CONTROL;
-            } else if (str8_match(key_mod.literal, str8_lit("Alt"))) {
-                key_value |= KEY_MOD_ALT;
-            } else if (str8_match(key_mod.literal, str8_lit("Shift"))) {
-                key_value |= KEY_MOD_SHIFT;
-            } else {
-                key_value |= (u16)search_os_key_from_string(key_mod.literal);
-            }
-        }
-        expect_token(&lexer, Token_CloseBrace);
-
-        key_map->mappings[key_value] = search_hoc_command_from_string(command_token.literal);
-
-        if (peek_token(&lexer).type != Token_Comma) break;
-        expect_token(&lexer, Token_Comma);
-    } while (token.type != Token_EOF);
-    
-    expect_token(&lexer, Token_CloseBrace);
-
-    return key_map;
 }
 
 int main(int argc, char **argv) {
@@ -727,7 +430,6 @@ int main(int argc, char **argv) {
     Hoc_Editor *def_editor = def_editor_view->editor.editor;
     def_editor->buffer = make_buffer(file_name);
     def_editor->face = default_fonts[FONT_CODE];
-    def_editor_view->editor.panel_dim = V2(1000.f, 600.f);
     
     // View *split_view = view_new();
     // split_view->buffer = make_buffer(str8_lit("test"));
