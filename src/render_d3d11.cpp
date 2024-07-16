@@ -180,6 +180,51 @@ internal D3D11_RECT rect_to_d3d11_rect(Rect rect) {
 }
 
 
+internal void d3d11_resize_render_target_view(UINT width, UINT height) {
+    HRESULT hr = S_OK;
+
+    // NOTE: Resize render target view
+    r_d3d11_state->device_context->OMSetRenderTargets(0, 0, 0);
+
+    // Release all outstanding references to the swap chain's buffers.
+    if (r_d3d11_state->render_target_view) r_d3d11_state->render_target_view->Release();
+
+    // Preserve the existing buffer count and format.
+    // Automatically choose the width and height to match the client rect for HWNDs.
+    hr = r_d3d11_state->swap_chain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
+
+    // Get buffer and create a render-target-view.
+    ID3D11Texture2D *backbuffer;
+    hr = r_d3d11_state->swap_chain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void **)&backbuffer);
+
+    hr = r_d3d11_state->device->CreateRenderTargetView(backbuffer, NULL, &r_d3d11_state->render_target_view);
+
+    backbuffer->Release();
+
+    if (r_d3d11_state->depth_stencil_view) r_d3d11_state->depth_stencil_view->Release();
+
+    {
+        D3D11_TEXTURE2D_DESC desc{};
+        desc.Width = width;
+        desc.Height = height;
+        desc.MipLevels = 1;
+        desc.ArraySize = 1;
+        desc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+        desc.SampleDesc.Count = 1;
+        desc.SampleDesc.Quality = 0;
+        desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+        desc.CPUAccessFlags = 0;
+        desc.MiscFlags = 0;
+
+        ID3D11Texture2D *depth_stencil_buffer = nullptr;
+        hr = r_d3d11_state->device->CreateTexture2D(&desc, NULL, &depth_stencil_buffer);
+        hr = r_d3d11_state->device->CreateDepthStencilView(depth_stencil_buffer, NULL, &r_d3d11_state->depth_stencil_view);
+    }
+
+    r_d3d11_state->device_context->OMSetRenderTargets(1, &r_d3d11_state->render_target_view, r_d3d11_state->depth_stencil_view);
+}
+
 internal void d3d11_render(Draw_Bucket *draw_bucket) {
     r_d3d11_state->device_context->OMSetBlendState(r_d3d11_state->blend_state, NULL, 0xffffffff);
     r_d3d11_state->device_context->PSSetSamplers(0, 1, &r_d3d11_state->sampler);
@@ -246,166 +291,6 @@ internal void d3d11_render(Draw_Bucket *draw_bucket) {
         }
         }
     }
-}
-
-#if 0
-internal void _d3d11_render() {
-    if (r_d3d11_state->ui_vertices.count == 0) return;
-    r_d3d11_state->device_context->VSSetShader(r_d3d11_state->vertex_shaders[D3D11_SHADER_UI], nullptr, 0);
-    r_d3d11_state->device_context->PSSetShader(r_d3d11_state->pixel_shaders[D3D11_SHADER_UI], nullptr, 0);
-
-    // Bind texture
-    r_d3d11_state->device_context->PSSetShaderResources(0, 1, (ID3D11ShaderResourceView **)&r_d3d11_state->current_texture);
-    r_d3d11_state->device_context->PSSetSamplers(0, 1, &r_d3d11_state->sampler);
-
-    r_d3d11_state->device_context->OMSetBlendState(r_d3d11_state->blend_state, NULL, 0xffffffff);
-
-    // Compute transform
-    ID3D11Buffer *uniform_buffer = r_d3d11_state->uniform_buffers[D3D11_SHADER_UI];
-    Rect draw_region = r_d3d11_state->draw_region;
-    m4 projection = ortho_rh_zo(draw_region.x0, draw_region.x1, draw_region.y1, draw_region.y0, -1.f, 1.f);
-    d3d11_upload_uniform(uniform_buffer, (void *)&projection, sizeof(projection));
-
-    // Bind uniform buffer
-    r_d3d11_state->device_context->VSSetConstantBuffers(0, 1, &uniform_buffer);
-    r_d3d11_state->device_context->PSSetConstantBuffers(0, 1, &uniform_buffer);
-
-    Auto_Array<u32> indices;
-    indices.reserve(r_d3d11_state->ui_vertices.count * 6 / 4);
-    for (int index = 0; index < r_d3d11_state->ui_vertices.count; index += 4) {
-        indices.push(index);
-        indices.push(index + 1);
-        indices.push(index + 2);
-        indices.push(index);
-        indices.push(index + 2);
-        indices.push(index + 3);
-    }
-    ID3D11Buffer *vertex_buffer = d3d11_make_vertex_buffer(r_d3d11_state->ui_vertices.data, sizeof(R_2D_Vertex) * r_d3d11_state->ui_vertices.count);
-    ID3D11Buffer *index_buffer = d3d11_make_index_buffer(indices.data, sizeof(u32) * (UINT)indices.count);
-
-    // IA
-    u32 stride = sizeof(R_2D_Vertex), offset = 0;
-    r_d3d11_state->device_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    r_d3d11_state->device_context->IASetInputLayout(r_d3d11_state->input_layouts[D3D11_SHADER_UI]);
-    r_d3d11_state->device_context->IASetVertexBuffers(0, 1, &vertex_buffer, &stride, &offset);
-    r_d3d11_state->device_context->IASetIndexBuffer(index_buffer, DXGI_FORMAT_R32_UINT, 0);
-
-    r_d3d11_state->device_context->DrawIndexed((UINT)indices.count, 0, 0);
-    // r_d3d11_state->device_context->Draw((UINT)r_d3d11_state->ui_vertices.count, 0);
-
-    indices.clear();
-    if (vertex_buffer) vertex_buffer->Release();
-    if (index_buffer) index_buffer->Release();
-}
-#endif
-
-#if 0
-internal void d3d11_render_batch(Render_Batch *batch) {
-    D3D11_Shader_Type shader_type = r_d3d11_state->current_shader_type;
-
-    if (batch->param_type == R_ParamsType_Model && batch->model_params.is_empty()) {}
-    else if (batch->param_type == R_ParamsType_UI && batch->ui_params.is_empty()) {}
-    else {
-        r_d3d11_state->device_context->VSSetShader(r_d3d11_state->vertex_shaders[shader_type], nullptr, 0);
-        r_d3d11_state->device_context->PSSetShader(r_d3d11_state->pixel_shaders[shader_type], nullptr, 0);
-
-        // IA
-        r_d3d11_state->device_context->IASetInputLayout(r_d3d11_state->input_layouts[shader_type]);
-
-        // Bind texture
-        r_d3d11_state->device_context->PSSetShaderResources(0, 1, (ID3D11ShaderResourceView **)&batch->texture);
-
-        // Compute transform
-        ID3D11Buffer *uniform_buffer = r_d3d11_state->uniform_buffers[shader_type];
-        m4 transform = r_d3d11_state->projection_matrix * r_d3d11_state->transform_matrix;
-        d3d11_upload_uniform(uniform_buffer, (void *)&transform, sizeof(transform));
-
-        // Bind uniform buffer
-        r_d3d11_state->device_context->VSSetConstantBuffers(0, 1, &uniform_buffer);
-        r_d3d11_state->device_context->PSSetConstantBuffers(0, 1, &uniform_buffer);
-
-        // Make index buffer
-        ID3D11Buffer *vertex_buffer = nullptr;
-        u32 stride = 0, offset = 0;
-        int params_count = 0;
-        switch (batch->param_type) {
-        case R_ParamsType_Model:
-            vertex_buffer = d3d11_make_vertex_buffer(batch->model_params.data, (UINT)(sizeof(R_Params_Model) * batch->model_params.count));
-            stride = sizeof(R_Params_Model);
-            params_count = (int)batch->model_params.count;
-            break;
-        case R_ParamsType_UI:
-            vertex_buffer = d3d11_make_vertex_buffer(batch->ui_params.data, (UINT)(sizeof(R_Params_UI) * batch->ui_params.count));
-            stride = sizeof(R_Params_UI);
-            params_count = (int)batch->ui_params.count;
-            break;
-        }
-        
-        r_d3d11_state->device_context->IASetVertexBuffers(0, 1, &vertex_buffer, &stride, &offset);
-        // make index buffer
-        Auto_Array<u32> indices;
-        indices.reserve(params_count * 6 / 4);
-        for (int index = 0; index < params_count; index += 4) {
-            indices.push(index);
-            indices.push(index + 1);
-            indices.push(index + 2);
-            indices.push(index);
-            indices.push(index + 2);
-            indices.push(index + 3);
-        }
-        ID3D11Buffer *index_buffer = d3d11_make_index_buffer(indices.data, sizeof(u32) * (UINT)indices.count);
-        r_d3d11_state->device_context->IASetIndexBuffer(index_buffer, DXGI_FORMAT_R32_UINT, 0);
-        r_d3d11_state->device_context->DrawIndexed((UINT)indices.count, 0, 0);
-
-        vertex_buffer->Release();
-        index_buffer->Release();
-    }
-}
-#endif
-
-internal void d3d11_resize_render_target_view(UINT width, UINT height) {
-    HRESULT hr = S_OK;
-
-    // NOTE: Resize render target view
-    r_d3d11_state->device_context->OMSetRenderTargets(0, 0, 0);
-
-    // Release all outstanding references to the swap chain's buffers.
-    if (r_d3d11_state->render_target_view) r_d3d11_state->render_target_view->Release();
-
-    // Preserve the existing buffer count and format.
-    // Automatically choose the width and height to match the client rect for HWNDs.
-    hr = r_d3d11_state->swap_chain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
-
-    // Get buffer and create a render-target-view.
-    ID3D11Texture2D *backbuffer;
-    hr = r_d3d11_state->swap_chain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void **)&backbuffer);
-
-    hr = r_d3d11_state->device->CreateRenderTargetView(backbuffer, NULL, &r_d3d11_state->render_target_view);
-
-    backbuffer->Release();
-
-    if (r_d3d11_state->depth_stencil_view) r_d3d11_state->depth_stencil_view->Release();
-
-    {
-        D3D11_TEXTURE2D_DESC desc{};
-        desc.Width = width;
-        desc.Height = height;
-        desc.MipLevels = 1;
-        desc.ArraySize = 1;
-        desc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
-        desc.SampleDesc.Count = 1;
-        desc.SampleDesc.Quality = 0;
-        desc.Usage = D3D11_USAGE_DEFAULT;
-        desc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
-        desc.CPUAccessFlags = 0;
-        desc.MiscFlags = 0;
-
-        ID3D11Texture2D *depth_stencil_buffer = nullptr;
-        hr = r_d3d11_state->device->CreateTexture2D(&desc, NULL, &depth_stencil_buffer);
-        hr = r_d3d11_state->device->CreateDepthStencilView(depth_stencil_buffer, NULL, &r_d3d11_state->depth_stencil_view);
-    }
-
-    r_d3d11_state->device_context->OMSetRenderTargets(1, &r_d3d11_state->render_target_view, r_d3d11_state->depth_stencil_view);
 }
 
 internal void d3d11_render_initialize(HWND window_handle) {
