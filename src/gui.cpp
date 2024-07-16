@@ -102,7 +102,7 @@ internal UI_BOX_CUSTOM_DRAW_PROC(draw_gui_editor) {
     // cursor_color *= (1.f - draw_data->editor->cursor_dt);
     // draw_data->editor->cursor_dt += ui_animation_dt();
     // draw_data->editor->cursor_dt = ClampBot(draw_data->editor->cursor_dt, 0.f);
-    if (box->hash == ui_focus_active_id()) {
+    if (box->key == ui_focus_active_id()) {
         draw_rect(cursor_rect, cursor_color);
     } else {
         draw_rect_outline(cursor_rect, cursor_color);
@@ -110,7 +110,6 @@ internal UI_BOX_CUSTOM_DRAW_PROC(draw_gui_editor) {
 }
 
 internal void gui_file_system_load_files(GUI_File_System *fs) {
-    printf("LOAD FILES\n");
     Arena *scratch = make_arena(get_malloc_allocator());
 
     String8 find_path = str8_copy(scratch, str8(fs->path_buffer, fs->path_len));
@@ -176,21 +175,18 @@ internal void gui_view_update(GUI_View *view) {
                 signal = ui_signal_from_box(code_body);
 
                 //@Note File bar
+                int hour, minute, second;
+                os_local_time(&hour, &minute, &second);
                 ui_set_next_pref_width(ui_pct(1.f, 1.f));
                 ui_set_next_pref_height(ui_text_dim(2.f, 1.f));
                 ui_set_next_background_color(V4(.94f, .94f, .94f, 1.f));
-                bottom_bar = ui_make_box_from_stringf(UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, "bottom_bar_%s", file_name);
-                int hour, minute, second;
-                os_local_time(&hour, &minute, &second);
-                String8 file_bar_string = str8_pushf(ui_build_arena(), "-\\**-  %s  (%lld,%lld) %d:%d", file_name, editor->cursor.line, editor->cursor.col, hour, minute);
-                ui_set_string(bottom_bar, file_bar_string);
+                bottom_bar = ui_make_box_from_stringf(UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, "-\\**-  %s  (%lld,%lld) %d:%d###bottom_bar_%s", file_name, editor->cursor.line, editor->cursor.col, hour, minute, file_name);
             }
 
             ui_set_next_background_color(V4(.94f, .94f, .94f, 1.f));
             UI_Signal signal = ui_scroll_bar(editor->buffer->file_name, gui_editor->scroll_pt, V2(0.f, buffer_get_line_count(editor->buffer) * editor->face->glyph_height));
             if (ui_clicked(signal)) {
                 gui_editor->scroll_pt = ui_get_mouse().y;
-                // printf("%f\n", gui_editor->scroll_pt);
             }
         }
         
@@ -199,7 +195,7 @@ internal void gui_view_update(GUI_View *view) {
         gui_editor->active_text_input = signal.text;
         gui_editor->box = code_body;
 
-        if (ui_focus_active_id() == code_body->hash) {
+        if (ui_focus_active_id() == code_body->key) {
             if (ui_pressed(signal)) {
                 u16 key = os_key_to_key_mapping(signal.key, signal.key_modifiers);
                 if (key && signal.key) {
@@ -217,7 +213,7 @@ internal void gui_view_update(GUI_View *view) {
             gui_editor->scroll_pt -= editor->face->glyph_height * signal.scroll.y;
         }
 
-        ui_set_string(code_body, buffer_to_string(ui_build_arena(), editor->buffer));
+        code_body->string = buffer_to_string(ui_build_arena(), editor->buffer); 
 
         Editor_Draw_Data *editor_draw_data = push_array(ui_build_arena(), Editor_Draw_Data, 1);
         editor_draw_data->editor = editor;
@@ -230,73 +226,73 @@ internal void gui_view_update(GUI_View *view) {
         GUI_File_System *fs = &view->fs;
         GUI_Editor *gui_editor = fs->current_editor;
         
-        v2 root_dim = V2(1000.f, 600.f);
-        v2 dim = V2(600.f, 400.f);
+        v2 root_dim = rect_dim(gui_editor->box->rect);
+        v2 dim = V2(400.f, 600.f);
         v2 p = V2(.5f * root_dim.x - .5f * dim.x, .5f * root_dim.y - .5f * dim.y);
 
         ui_set_next_text_color(V4(.4f, .4f, .4f, 1.f));
-        ui_set_next_background_color(V4(.2f, .2f, .2f, 1.f));
+        ui_set_next_background_color(V4(1.f, 1.f, 1.f, 1.f));
         ui_set_next_border_color(V4(.4f, .4f, .4f, 1.f));
         ui_set_next_fixed_x(p.x);
         ui_set_next_fixed_y(p.y);
         ui_set_next_fixed_width(dim.x);
         ui_set_next_fixed_height(dim.y);
         ui_set_next_child_layout(AXIS_Y);
-        UI_Box *fs_container = ui_make_box_from_stringf(UI_BOX_DRAW_BACKGROUND, "file_system_%d", view->id);
+        UI_Box *fs_container = ui_make_box_from_stringf(UI_BOX_OVERFLOW_Y, "file_system_%d", view->id);
 
         bool kill_file_system = false;
+        Arena *scratch = make_arena(get_malloc_allocator());
 
         UI_BackgroundColor(V4(.4f, .4f, .4f, 1.f))
             UI_TextColor(V4(.2f, .2f, .2f, 1.f))
             UI_BorderColor(V4(.2f, .2f, .2f, 1.f))
             UI_Parent(fs_container)
             UI_PrefWidth(ui_pct(1.f, 1.f))
-            UI_PrefHeight(ui_text_dim(2.f, 1.f))
+            UI_PrefHeight(ui_text_dim(2.f, 0.f))
         {
-            UI_Signal prompt_sig = ui_line_edit(str8_lit("Navigate to File"), fs->path_buffer, 2048, &fs->path_pos, &fs->path_len);
-            if (!prompt_sig.box->string.count) {
-                ui_set_string(prompt_sig.box, str8_lit("Navigate to File"));
-            }
+            UI_Signal prompt_sig = ui_line_edit(str8_lit("fs_prompt_1"), fs->path_buffer, 2048, &fs->path_pos, &fs->path_len);
 
-            Arena *scratch = make_arena(get_malloc_allocator());
             if (ui_pressed(prompt_sig)) {
-                if (prompt_sig.key == OS_KEY_SLASH || prompt_sig.key == OS_KEY_BACKSLASH) {
+                if (prompt_sig.key == OS_KEY_SLASH || prompt_sig.key == OS_KEY_BACKSLASH) 
                     gui_file_system_load_files(fs);
-                } else if (prompt_sig.key == OS_KEY_BACKSPACE) {
-                    u8 last = fs->path_len > 0 ? fs->path_buffer[fs->path_len - 1] : 0;
-                    if (last == '\\' || last == '/') {
-                        gui_file_system_load_files(fs);
-                    }
-                } else if (prompt_sig.key == OS_KEY_ENTER) {
-                    String8 file_path = str8_copy(scratch, str8(fs->path_buffer, fs->path_len));
-                    if (os_file_exists(file_path)) {
-                        gui_editor->editor->buffer = make_buffer(file_path);
-                        kill_file_system = true;
-                    }
-                } else if (prompt_sig.key == OS_KEY_ESCAPE) {
-                    kill_file_system = true;
+            }
+            if (prompt_sig.key == OS_KEY_BACKSPACE) {
+                u8 last = fs->path_len > 0 ? fs->path_buffer[fs->path_len - 1] : 0;
+                if (last == '\\' || last == '/') {
+                    gui_file_system_load_files(fs);
                 }
             }
-        
-            for (int i = 0; i < fs->sub_file_count; i++) {
-                String8 sub_path = fs->sub_file_paths[i];
-                if (ui_clicked(ui_button(sub_path))) {
-                    //@Todo use a set normalized path for this, not current prompt path
-                    String8 file_path = str8(fs->path_buffer, fs->path_len);
-                    file_path = str8_concat(scratch, file_path, sub_path);
-                    // printf("CLICKED %s\n", file_path.data);
+            if (prompt_sig.key == OS_KEY_ENTER) {
+                String8 file_path = str8_copy(scratch, str8(fs->path_buffer, fs->path_len));
+                if (os_file_exists(file_path)) {
                     gui_editor->editor->buffer = make_buffer(file_path);
                     kill_file_system = true;
                 }
             }
-            arena_release(scratch);
+            if (prompt_sig.key == OS_KEY_ESCAPE) {
+                kill_file_system = true;
+            }
+        
+            for (int i = 0; i < fs->sub_file_count; i++) {
+                String8 sub_path = fs->sub_file_paths[i];
+                // if (ui_clicked(ui_buttonf("foo_button_%s", sub_path.data))) {
+                UI_Signal button_sig = ui_button(sub_path);
+                if (ui_clicked(button_sig)) {
+                    //@Todo use a set normalized path for this, not current prompt path
+                    String8 file_path = str8(fs->path_buffer, fs->path_len);
+                    file_path = str8_concat(scratch, file_path, sub_path);
+                    gui_editor->editor->buffer = make_buffer(file_path);
+                    kill_file_system = true;
+                }
+            }
         }
 
+        arena_release(scratch);
         if (kill_file_system) {
             remove_gui_view(view);
         }
+
         break;
     }
-
     }
 }
