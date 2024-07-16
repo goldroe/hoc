@@ -1,4 +1,10 @@
+#define _CRT_SECURE_NO_WARNINGS
+#define STB_SPRINTF_IMPLEMENTATION
+#define STB_SPRINTF_DECORATE(name) hoc_##name
+#include <stb_sprintf.h>
+
 #include "core/core.h"
+
 #include "core/core_arena.h"
 #include "core/core_strings.h"
 #include "os/os.h"
@@ -39,7 +45,7 @@ Arena *string_arena;
 Auto_Array<String8> command_names;
 
 int main(int argc, char **argv) {
-    string_arena = arena_new();
+    string_arena = make_arena(get_malloc_allocator());
     os_chdir(str8_lit("src"));
 
     String8 files[] = {
@@ -54,7 +60,7 @@ int main(int argc, char **argv) {
         do {
             token = get_token(&lexer);
            
-            if (token.type == Token_Ident && str8_eq(token.literal, str8_lit("COMMAND"))) {
+            if (token.type == Token_Ident && str8_match(token.literal, str8_lit("HOC_COMMAND"))) {
                 if (get_token(&lexer).type == Token_OpenParen) {
                     Token name = get_token(&lexer);
                     String8 string = str8_copy(string_arena, name.literal);

@@ -11,6 +11,8 @@ global Hoc_Command hoc_commands[] = {
 { str8_lit("forward_paragraph"), forward_paragraph },
 { str8_lit("previous_line"), previous_line },
 { str8_lit("next_line"), next_line },
+{ str8_lit("page_up"), page_up },
+{ str8_lit("page_down"), page_down },
 { str8_lit("backward_delete_char"), backward_delete_char },
 { str8_lit("forward_delete_char"), forward_delete_char },
 { str8_lit("backward_delete_word"), backward_delete_word },
