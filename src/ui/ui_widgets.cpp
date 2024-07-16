@@ -110,8 +110,39 @@ internal UI_Signal ui_line_edit(String8 name, void *buffer, u64 max_buffer_capac
     UI_Line_Edit_Draw_Data *draw_data = push_array(ui_build_arena(), UI_Line_Edit_Draw_Data, 1);
     draw_data->edit_string = str8((u8 *)buffer, *buffer_count);
     draw_data->cursor = *buffer_pos;
-    box->box_draw_data = draw_data;
-    box->custom_draw_proc = ui_draw_line_edit;
+    ui_set_custom_draw(box, ui_draw_line_edit, draw_data);
+    return signal;
+}
+
+struct UI_Scroll_Bar_Draw {
+    v2 thumb_position;
+    v2 view_bounds;
+};
+
+internal UI_BOX_CUSTOM_DRAW_PROC(ui_draw_scroll_bar) {
+    UI_Scroll_Bar_Draw *draw_data = (UI_Scroll_Bar_Draw *)user_data;
+    draw_rect(box->rect, box->background_color);
+
+    v2 thumb_size;
+    thumb_size.x = 20.f;
+    // if (rect_height(box->rect) > draw_data->view_bounds.y) {
+    //     return; 
+    // }
+    thumb_size.y = rect_height(box->rect) * (rect_height(box->rect) / draw_data->view_bounds.y);
+    Rect thumb_rect = make_rect(box->rect.x0 + draw_data->thumb_position.x,  box->rect.y0 + draw_data->thumb_position.y, thumb_size.x, thumb_size.y);
+    draw_rect(thumb_rect, V4(.65f, .65f, .65f, 1.f));
+}
+
+internal UI_Signal ui_scroll_bar(String8 name, f32 scroll_pt, v2 view_bounds) {
+    ui_set_next_fixed_width(20.f);
+    ui_set_next_pref_height(ui_pct(1.f, 0.f));
+    UI_Box *scroll_bar = ui_make_box_from_stringf(UI_BOX_DRAW_BACKGROUND, "scroll_bar_%s", name.data);
+    UI_Signal signal = ui_signal_from_box(scroll_bar);
+
+    UI_Scroll_Bar_Draw *draw_data = push_array(ui_build_arena(), UI_Scroll_Bar_Draw, 1);
+    draw_data->thumb_position.y = scroll_pt;
+    draw_data->view_bounds = view_bounds;
+    ui_set_custom_draw(scroll_bar, ui_draw_scroll_bar, draw_data);
     return signal;
 }
 
