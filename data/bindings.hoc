@@ -18,10 +18,12 @@
     { "goto_first_line", "Comma", "Alt", "Shift" },
     { "goto_last_line", "Period", "Alt", "Shift" },
 
-    // { "open_line", "O", "Alt" },
+    { "open_line", "O", "Alt" },
     { "save_buffer", "S", "Control" },
 
-    { "find_file", "O", "Control" }
+    { "find_file", "O", "Control" },
 
+    { "page_up", "PageUp" },
+    { "page_down", "PageDown" }
     // { "", "" }
 }
