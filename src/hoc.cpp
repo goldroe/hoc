@@ -339,12 +339,9 @@ internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handl
     // }
 
     UI_Parent(main_body)
-        UI_BackgroundColor(V4(1.f, 1.f, 1.f, 1.f))
+        UI_BackgroundColor(V4(.98f, .96f, .84f, 1.f))
         UI_BorderColor(V4(.2f, .19f, .18f, 1.f))
-        UI_TextColor(V4(.2f, .2f, .2f, 1.f))
-        // UI_BackgroundColor(V4(.2f, .19f, .18f, 1.f))
-        // UI_BorderColor(V4(.2f, .19f, .18f, 1.f))
-        // UI_TextColor(V4(.92f, .86f, .7f, 1.f))
+        UI_TextColor(V4(.24f, .22f, .21f, 1.f))
     {
         for (GUI_View *view = hoc_app->gui_views.first; view != nullptr; view = view->next) {
             gui_view_update(view);
@@ -416,8 +413,8 @@ int main(int argc, char **argv) {
     hoc_app = make_hoc_application();
     ui_set_state(ui_state_new());
 
-    default_fonts[FONT_DEFAULT] = load_font_face(str8_lit("fonts/consolas.ttf"), 16);
-    default_fonts[FONT_CODE] = load_font_face(str8_lit("fonts/LiberationMono.ttf"), 14);
+    default_fonts[FONT_DEFAULT] = load_font_face(str8_lit("fonts/DejaVuSansMono.ttf"), 14);
+    default_fonts[FONT_CODE] = load_font_face(str8_lit("fonts/DejaVuSansMono.ttf"), 12);
 
     key_map_arena = make_arena(get_malloc_allocator());
     default_key_map = load_key_map(key_map_arena, str8_lit("data/bindings.hoc"));
