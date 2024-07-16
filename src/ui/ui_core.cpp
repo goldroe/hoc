@@ -1,5 +1,9 @@
 global UI_State *ui_state;
 
+internal UI_Box *ui_get_root() {
+    return ui_state->root;
+}
+
 internal f32 ui_animation_dt() {
     return ui_state->animation_dt;
 }
@@ -17,6 +21,24 @@ internal UI_State *ui_state_new() {
     ui->box_table_size = 4096;
     ui->box_table = push_array(arena, UI_Hash_Bucket, ui->box_table_size);
     return ui;
+}
+
+internal UI_Event *ui_push_event(UI_Event_Type type) {
+    UI_Event *result = push_array(ui_build_arena(), UI_Event, 1);
+    result->type = type;
+    result->next = nullptr;
+    result->prev = nullptr;
+    
+    UI_Event *last = ui_state->events.last;
+    if (last) {
+        last->next = result;
+        result->prev = last;
+    } else {
+        ui_state->events.first = result;
+    }
+    ui_state->events.last = result;
+    ui_state->events.count += 1;
+    return result;
 }
 
 internal void ui_pop_event(UI_Event *event) {
@@ -76,24 +98,6 @@ internal bool ui_key_release(OS_Key key) {
     return result;
 }
 
-internal UI_Event *ui_push_event(UI_Event_Type type) {
-    UI_Event *result = push_array(ui_build_arena(), UI_Event, 1);
-    result->type = type;
-    result->next = nullptr;
-    result->prev = nullptr;
-    
-    UI_Event *last = ui_state->events.last;
-    if (last) {
-        last->next = result;
-        result->prev = last;
-    } else {
-        ui_state->events.first = result;
-    }
-    ui_state->events.last = result;
-    ui_state->events.count += 1;
-    return result;
-}
-
 internal v2 measure_string_size(String8 string, Face *font_face) {
     v2 result = V2();
     for (u64 i = 0; i < string.count; i++) {
@@ -124,38 +128,30 @@ internal void ui_set_custom_draw(UI_Box *box, UI_Box_Draw_Proc *draw_proc, void 
     box->draw_data = user_data;
 }
 
-internal void ui_set_string(UI_Box *box, String8 string) {
-    box->string = string;
+internal void ui_box_set_string(UI_Box *box, String8 string) {
+    String8 display_string = string;
+    u64 hash_start = str8_find_substr(string, str8_lit("###"));
+    if (hash_start < string.count) {
+        display_string.count -= hash_start;
+    }
+    box->string = str8_copy(ui_build_arena(), display_string);
 }
 
-internal void ui_set_focus_active(UI_Hash hash) {
-    ui_state->focus_active_id = hash;
+//@Note Active setters/getters
+internal void ui_set_focus_active(UI_Key key) {
+    ui_state->focus_active_id = key;
 }
 
-internal UI_Hash ui_focus_active_id() {
+internal UI_Key ui_focus_active_id() {
     return ui_state->focus_active_id;
 }
 
-internal void ui_set_active(UI_Hash hash) {
-    ui_state->active_id = hash;
+internal void ui_set_active(UI_Key key) {
+    ui_state->active_id = key;
 }
 
-internal UI_Hash ui_active_id() {
+internal UI_Key ui_active_id() {
     return ui_state->active_id;
-}
-
-internal UI_Box *ui_get_root() {
-    return ui_state->root;
-}
-
-internal UI_Hash ui_hash_string(UI_Hash seed_hash, String8 text) {
-    //@Note djb2 hash algorithm
-    UI_Hash hash = seed_hash;
-    int c;
-    while (c = *text.data++) {
-        hash = ((hash << 5) + hash) + c; // hash * 33 + c
-    }
-    return hash;
 }
 
 internal UI_Size ui_size(UI_Size_Type type, f32 value, f32 strictness) {
@@ -163,22 +159,14 @@ internal UI_Size ui_size(UI_Size_Type type, f32 value, f32 strictness) {
     return size;
 }
 
-internal UI_Box *ui_box_from_hash(UI_Hash hash) {
-    UI_Hash_Bucket *hash_bucket = &ui_state->box_table[hash % ui_state->box_table_size];
+internal UI_Box *ui_box_from_key(UI_Key key) {
+    UI_Hash_Bucket *hash_bucket = &ui_state->box_table[key % ui_state->box_table_size];
     for (UI_Box *box = hash_bucket->first; box; box = box->hash_next) {
-        if (box->hash == hash) {
+        if (box->key == key) {
             return box;
         }
     }
     return nullptr;
-}
-
-internal UI_Box *ui_get_parent() {
-    UI_Box *box = nullptr;
-    if (!ui_state->parent_stack.is_empty()) {
-        box = ui_state->parent_stack.top();
-    }
-    return box;
 }
 
 internal void ui_push_box(UI_Box *box, UI_Box *parent) {
@@ -192,6 +180,7 @@ internal void ui_push_box(UI_Box *box, UI_Box *parent) {
             parent->first = box;
             parent->last = box;
         }
+        parent->child_count += 1;
     }
 }
 
@@ -200,15 +189,15 @@ internal Arena *ui_build_arena() {
     return result;
 }
 
-internal UI_Box *ui_make_box(UI_Hash hash, UI_Box_Flags flags) {
-    UI_Box *parent = ui_get_parent();
-    UI_Box *box = ui_box_from_hash(hash);
+internal UI_Box *ui_make_box(UI_Key key, UI_Box_Flags flags) {
+    UI_Box *parent = ui_top_parent();
+    UI_Box *box = ui_box_from_key(key);
     bool box_first_frame = box == nullptr;
     if (box_first_frame) {
         box = push_array(ui_state->arena, UI_Box, 1);
         *box = UI_Box();
 
-        UI_Hash_Bucket *hash_bucket = &ui_state->box_table[hash % ui_state->box_table_size];
+        UI_Hash_Bucket *hash_bucket = &ui_state->box_table[key % ui_state->box_table_size];
         if (!hash_bucket->first) {
             hash_bucket->first = box;
             hash_bucket->last = box;
@@ -224,7 +213,8 @@ internal UI_Box *ui_make_box(UI_Hash hash, UI_Box_Flags flags) {
 
     //@Note Reset per-frame builder options
     box->first = box->last = box->prev = box->next = box->parent = nullptr;
-    box->hash = hash;
+    box->child_count = 0;
+    box->key = key;
     box->flags = flags;
     box->pref_size[0] = {};
     box->pref_size[1] = {};
@@ -304,24 +294,57 @@ internal UI_Box *ui_make_box(UI_Hash hash, UI_Box_Flags flags) {
     return box;
 }
 
-internal UI_Hash ui_seed_hash(UI_Box *parent) {
-    UI_Hash seed_hash = 0;
+//@Note Key-ing functions
+
+//@Note djb2 hash algorithm
+internal u64 ui_hash_from_string(u64 seed, String8 string) {
+    u64 result = seed;
+    for (u64 i = 0; i < string.count; i++) {
+        result = ((result << 5) + result) + string.data[i];
+    }
+    return result;
+}
+
+internal String8 hash_part_from_string(String8 string) {
+    String8 hash_part = string;
+    u64 hash_start = str8_find_substr(string, str8_lit("###"));
+    if (hash_start < string.count) {
+        hash_part = str8_jump(string, hash_start);
+    }
+    return hash_part;     
+}
+
+internal UI_Key ui_key_from_string(UI_Key seed_key, String8 string) {
+    String8 hash_part = hash_part_from_string(string);
+    UI_Key key = (UI_Key)ui_hash_from_string((u64)seed_key, hash_part);
+    return key;
+}
+
+internal UI_Key ui_seed_key(UI_Box *parent) {
+    UI_Key seed_key = 0;
     UI_Box *inherited_seed_parent = parent;
     while (inherited_seed_parent) {
-        if (inherited_seed_parent->hash != 0) {
-            seed_hash = inherited_seed_parent->hash;
+        if (inherited_seed_parent->key != 0) {
+            seed_key = inherited_seed_parent->key;
+            break;
         }
         inherited_seed_parent = inherited_seed_parent->parent;
     }
-    return seed_hash;
+    return seed_key;
 }
 
 internal UI_Box *ui_make_box_from_string(UI_Box_Flags flags, String8 string) {
     UI_Box *box = nullptr;
     UI_Box *parent = ui_top_parent();
-    UI_Hash seed_hash = ui_seed_hash(parent);
-    UI_Hash box_hash = ui_hash_string(seed_hash, string);
-    box = ui_make_box(box_hash, flags);
+
+    UI_Key seed_key = ui_seed_key(parent);
+    UI_Key key = ui_key_from_string(seed_key, string);
+    box = ui_make_box(key, flags);
+
+    if (box->flags & UI_BOX_DRAW_TEXT) {
+        ui_box_set_string(box, string);
+    }
+
     return box;
 }
 
@@ -334,25 +357,12 @@ internal UI_Box *ui_make_box_from_stringf(UI_Box_Flags flags, char *fmt, ...) {
     return box;
 }
 
-//@Note Checks if any children boxes will receive an event in the future to prioritize ones in front
-internal bool ui_overlapping_descendant(UI_Box *root, int box_id) {
-    bool result = false;
-    for (UI_Box *child = root->first; child; child = child->next) {
-        result |= ui_overlapping_descendant(child, box_id);
-    }
-    if (root->box_id > box_id && ui_mouse_hover(root)) {
-        // printf("%d overlaps %f,%f  (%f,%f),(%f,%f)\n", root->box_id, ui_state->mouse_position.x, ui_state->mouse_position.y, root->rect.x0, root->rect.y0, root->rect.x1, root->rect.y1);
-        result = true;
-    }
-    return result;
-}
-
 internal UI_Signal ui_signal_from_box(UI_Box *box) {
     UI_Signal signal{};
     signal.box = box;
     signal.key_modifiers = os_event_flags();
 
-    UI_Box *box_last_frame = ui_box_from_hash(box->hash);
+    UI_Box *box_last_frame = ui_box_from_key(box->key);
     bool box_first_frame = box_last_frame == nullptr;
     if (box_first_frame) {
         return signal;
@@ -380,9 +390,9 @@ internal UI_Signal ui_signal_from_box(UI_Box *box) {
             if (event_in_bounds && !do_later) {
                 signal.flags |= UI_SIGNAL_CLICKED;
                 // signal.pos = event->pos;
-                ui_set_active(box->hash);
+                ui_set_active(box->key);
                 if (box->flags & UI_BOX_KEYBOARD_INPUT) {
-                    ui_set_focus_active(box->hash);
+                    ui_set_focus_active(box->key);
                 }
                 taken = true;
             }
@@ -511,7 +521,7 @@ internal void ui_layout_calc_downwards_dependent(UI_Box *root, Axis2 axis) {
 
 internal void ui_layout_resolve_violations(UI_Box *root, Axis2 axis) {
     //@Note Resolve by basic clipping if not on the layout axis
-    if (axis != root->child_layout_axis) {
+    if (axis != root->child_layout_axis && !(root->flags & (UI_BOX_OVERFLOW_X << axis))) {
         f32 max_size = root->fixed_size[axis];
         for (UI_Box *child = root->first; child != nullptr; child = child->next) {
             f32 child_size = child->fixed_size[axis];
@@ -524,7 +534,7 @@ internal void ui_layout_resolve_violations(UI_Box *root, Axis2 axis) {
     }
 
     //@Note Resolve by doing percent fixup if on the layout axis
-    if (axis == root->child_layout_axis) {
+    if (axis == root->child_layout_axis && !(root->flags & (UI_BOX_OVERFLOW_X << axis))) {
         f32 max_size = root->fixed_size[axis];
         f32 total_size = 0.f;
         f32 total_weighted_size = 0.f;
@@ -536,12 +546,15 @@ internal void ui_layout_resolve_violations(UI_Box *root, Axis2 axis) {
         }
 
         f32 violation = total_size - max_size;
-        for (UI_Box *child = root->first; child != nullptr; child = child->next) {
-            if (!(child->flags & UI_BOX_FLOATING_X<<axis)) {
-                f32 fixup = child->fixed_size[axis] * (1 - child->pref_size[axis].strictness);
-                f32 fix_pct = violation / total_weighted_size;
-                fix_pct = Clamp(fix_pct, 0, 1);
-                child->fixed_size[axis] -= fixup * fix_pct;
+        if (violation > 0) {
+            for (UI_Box *child = root->first; child != nullptr; child = child->next) {
+                if (!(child->flags & UI_BOX_FLOATING_X<<axis)) {
+                    f32 fixup = child->fixed_size[axis] * (1 - child->pref_size[axis].strictness);
+                    fixup = ClampBot(fixup, 0);
+                    f32 fix_pct = violation / total_weighted_size;
+                    fix_pct = Clamp(fix_pct, 0, 1);
+                    child->fixed_size[axis] -= fixup * fix_pct;
+                }
             }
         }
     }
@@ -617,7 +630,6 @@ internal v2 ui_get_text_position(UI_Box *box) {
 internal void ui_begin_build(f32 animation_dt, OS_Handle window_handle, OS_Event_List *events) {
     ui_state->animation_dt = animation_dt;
 
-    // printf("UI EVENTS\n");
     UI_Event *ui_event = nullptr;
     for (OS_Event *event = events->first; event; event = event->next) {
         switch (event->type) {
@@ -652,7 +664,6 @@ internal void ui_begin_build(f32 animation_dt, OS_Handle window_handle, OS_Event
         case OS_EVENT_TEXT:
             ui_event = ui_push_event(UI_EVENT_TEXT);
             ui_event->text = str8_copy(ui_build_arena(), event->text);
-            // printf("insert text: %.*s\n", (int)ui_event->text.count, ui_event->text.data);
             break;
         }
     }
@@ -678,7 +689,7 @@ internal void ui_collect_build_boxes(UI_Box *root) {
         ui_collect_build_boxes(child);
     }
     UI_Box box{};
-    box.hash = root->hash;
+    box.key = root->key;
     box.box_id = root->box_id;
     box.rect = root->rect;
     ui_state->last_build_collection.push(box);

@@ -5,7 +5,7 @@
 
 struct Face;
 
-typedef u32 UI_Hash;
+typedef u64 UI_Key;
 
 template <class T>
 class UI_Stack {
@@ -84,8 +84,9 @@ struct UI_Box {
     UI_Box *next = nullptr;
     UI_Box *first = nullptr;
     UI_Box *last = nullptr;
+    int child_count = 0;
 
-    UI_Hash hash = 0;
+    UI_Key key = 0;
     UI_Box_Flags flags = UI_BOX_NIL;
     int box_id = 0 ; //@Note Shows order of creation
 
@@ -95,7 +96,7 @@ struct UI_Box {
     UI_Size pref_size[AXIS_COUNT];
     Axis2 child_layout_axis = AXIS_Y;
     UI_Text_Align text_alignment = UI_TEXT_ALIGN_CENTER;
-    UI_Hash next_focus_key = 0;
+    UI_Key next_focus_key = 0;
     Face *font_face;
     v4 background_color = V4(1.f, 1.f, 1.f, 1.f);
     v4 text_color = V4();
@@ -154,8 +155,8 @@ struct UI_State {
     Auto_Array<UI_Box> last_build_collection;
     UI_Box *root = nullptr;
 
-    UI_Hash focus_active_id = 0;
-    UI_Hash active_id = 0;
+    UI_Key focus_active_id = 0;
+    UI_Key active_id = 0;
 
     v2 mouse_position;
     bool mouse_captured = false;
@@ -258,17 +259,16 @@ internal void ui_end_frame();
 
 internal Arena *ui_build_arena();
 
-internal UI_Box *ui_make_box(UI_Hash hash, UI_Box_Flags flags);
+internal UI_Box *ui_make_box(UI_Key key, UI_Box_Flags flags);
 internal UI_Box *ui_make_box_from_string(UI_Box_Flags flags, String8 string);
-internal UI_Box *ui_box_from_hash(UI_Hash hash);
+internal UI_Box *ui_box_from_key(UI_Key key);
 internal UI_Signal ui_signal_from_box(UI_Box *box);
 
 internal v2 ui_get_mouse();
 internal bool ui_mouse_over_box(UI_Box *box);
 
-internal UI_Hash ui_hash(String8 text);
-internal void ui_set_active(UI_Hash hash);
-internal UI_Hash ui_active_id();
+internal void ui_set_active(UI_Key key);
+internal UI_Key ui_active_id();
 internal UI_Box *ui_get_root();
 
 internal v2 ui_get_text_position(UI_Box *box);
