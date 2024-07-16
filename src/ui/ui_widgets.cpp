@@ -1,32 +1,28 @@
 #include "ui_core.h"
 #include "ui_widgets.h"
 
-internal UI_Signal ui_label(String8 name) {
-    UI_Box *box = ui_make_box_from_string(UI_BOX_DRAW_TEXT, name);
-    // String8 string = str8_copy(ui_build_arena(), name);
-    // ui_set_string(box, string);
+internal UI_Signal ui_label(String8 string) {
+    UI_Box *box = ui_make_box_from_string(UI_BOX_DRAW_TEXT, string);
     return ui_signal_from_box(box);
 }
 
 internal UI_Signal ui_labelf(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    String8 string = str8_pushf(ui_build_arena(), fmt, args);
+    String8 string = str8_pushfv(ui_build_arena(), fmt, args);
     va_end(args);
     return ui_label(string);
 }
 
-internal UI_Signal ui_button(String8 name) {
-    UI_Box *box = ui_make_box_from_string(UI_BOX_CLICKABLE | UI_BOX_HOVERABLE | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_BORDER | UI_BOX_DRAW_TEXT, name);
-    String8 string = str8_copy(ui_build_arena(), name);
-    ui_set_string(box, string);
+internal UI_Signal ui_button(String8 string) {
+    UI_Box *box = ui_make_box_from_string(UI_BOX_CLICKABLE | UI_BOX_HOVERABLE | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_BORDER | UI_BOX_DRAW_TEXT, string);
     return ui_signal_from_box(box);
 }
 
 internal UI_Signal ui_buttonf(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    String8 string = str8_pushf(ui_build_arena(), fmt, args);
+    String8 string = str8_pushfv(ui_build_arena(), fmt, args);
     va_end(args);
     return ui_button(string);
 }
@@ -48,18 +44,19 @@ internal UI_BOX_CUSTOM_DRAW_PROC(ui_draw_line_edit) {
     string_before_cursor.count = (u64)draw_data->cursor;
     v2 c_pos = text_position + measure_string_size(string_before_cursor, box->font_face);
     Rect c_rect = make_rect(c_pos.x, c_pos.y, 2.f, box->font_face->glyph_height);
-    if (box->hash == ui_focus_active_id()) {
+    if (box->key == ui_focus_active_id()) {
         draw_rect(c_rect, box->text_color);
     }
 }
 
 internal UI_Signal ui_line_edit(String8 name, void *buffer, u64 max_buffer_capacity, u64 *buffer_pos,  u64 *buffer_count) {
-    UI_Box *box = ui_make_box_from_string(UI_BOX_CLICKABLE | UI_BOX_HOVERABLE | UI_BOX_KEYBOARD_INPUT | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_BORDER | UI_BOX_DRAW_TEXT, name);
+    UI_Box *box = ui_make_box_from_string(UI_BOX_CLICKABLE | UI_BOX_HOVERABLE | UI_BOX_KEYBOARD_INPUT |
+         UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, name);
     UI_Signal signal = ui_signal_from_box(box);
 
     u64 pos = *buffer_pos;
     u64 count = *buffer_count;
-    if (ui_focus_active_id() == box->hash) {
+    if (ui_focus_active_id() == box->key) {
         for (UI_Event *event = ui_state->events.first, *next = nullptr; event; event = next) {
             next = event->next;
             switch (event->type) {

@@ -6,6 +6,13 @@ internal f32 randf(f32 min, f32 max) {
     return result; 
 }
 
+internal v2 rect_dim(Rect rect) {
+    v2 result;
+    result.x = rect.x1 - rect.x0;
+    result.y = rect.y1 - rect.y0;
+    return result;
+}
+
 internal inline Rect make_rect(f32 x, f32 y, f32 w, f32 h) {
     Rect result;
     result.x0 = x;
