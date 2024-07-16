@@ -34,8 +34,13 @@ internal void ui_pop_event(UI_Event *event) {
     }
 }
 
+internal v2 ui_get_mouse() {
+    v2 result = ui_state->mouse_position;
+    return result;
+}
+
 internal bool ui_mouse_hover(UI_Box *box) {
-    v2 v = ui_state->mouse_position;
+    v2 v = ui_get_mouse();
     bool result = v.x >= box->rect.x0 &&
         v.x <= box->rect.x1 &&
         v.y >= box->rect.y0 &&
@@ -112,6 +117,11 @@ internal f32 get_string_width(String8 text, Face *font_face) {
         result += g.ax;
     }
     return result;
+}
+
+internal void ui_set_custom_draw(UI_Box *box, UI_Box_Draw_Proc *draw_proc, void *user_data) {
+    box->custom_draw_proc = draw_proc;
+    box->draw_data = user_data;
 }
 
 internal void ui_set_string(UI_Box *box, String8 string) {
@@ -391,6 +401,7 @@ internal UI_Signal ui_signal_from_box(UI_Box *box) {
             if (event_in_bounds && !do_later) {
                 taken = true;
                 signal.scroll = event->delta;
+                signal.flags |= UI_SIGNAL_SCROLL;
             }
             break;
         }
@@ -425,41 +436,39 @@ internal UI_Signal ui_signal_from_box(UI_Box *box) {
     return signal;
 }
 
-internal void ui_layout_calc_fixed(UI_Box *box, Axis2 axis) {
-    if (!(box->flags & (UI_BOX_FIXED_WIDTH << axis))) {
+internal void ui_layout_calc_fixed(UI_Box *root, Axis2 axis) {
+    if (!(root->flags & (UI_BOX_FIXED_WIDTH << axis))) {
         f32 size = 0.0f;
-        switch (box->pref_size[axis].type) {
+        switch (root->pref_size[axis].type) {
         default:
             break;
         case UI_SIZE_PIXELS:
-            size = box->pref_size[axis].value;
+            size = root->pref_size[axis].value;
             break;
         case UI_SIZE_TEXT_CONTENT:
-            f32 padding = box->pref_size[axis].value;
+            f32 padding = root->pref_size[axis].value;
             if (axis == AXIS_X) {
-                size = get_string_width(box->string, box->font_face);
+                size = get_string_width(root->string, root->font_face);
             } else {
-                size = box->font_face->glyph_height;
+                size = root->font_face->glyph_height;
             }
             size += 2.0f * padding;
             break;
         }
-        box->fixed_size[axis] += size;
+        root->fixed_size[axis] += size;
     }
 
-    for (UI_Box *child = box->first; child != nullptr; child = child->next) {
+    for (UI_Box *child = root->first; child != nullptr; child = child->next) {
         ui_layout_calc_fixed(child, axis);
     }
 }
 
-internal void ui_layout_calc_upwards_dependent(UI_Box *box, Axis2 axis) {
-    if (box->pref_size[axis].type == UI_SIZE_PARENT_PERCENT) {
-        for (UI_Box *parent = box->parent; parent != nullptr; parent = parent->parent) {
+internal void ui_layout_calc_upwards_dependent(UI_Box *root, Axis2 axis) {
+    if (root->pref_size[axis].type == UI_SIZE_PARENT_PERCENT) {
+        for (UI_Box *parent = root->parent; parent != nullptr; parent = parent->parent) {
             bool found = false;
             if (parent->flags & (UI_BOX_FIXED_WIDTH<<axis)) found = true;
             switch (parent->pref_size[axis].type) {
-            default:
-                break;
             case UI_SIZE_PIXELS:
             case UI_SIZE_TEXT_CONTENT:
                 found = true;
@@ -467,63 +476,110 @@ internal void ui_layout_calc_upwards_dependent(UI_Box *box, Axis2 axis) {
             }
 
             if (found) {
-                box->fixed_size[axis] = box->pref_size[axis].value * parent->fixed_size[axis];
+                root->fixed_size[axis] = root->pref_size[axis].value * parent->fixed_size[axis];
                 break; 
             }
         }
     }
 
-    for (UI_Box *child = box->first; child != nullptr; child = child->next) {
+    for (UI_Box *child = root->first; child != nullptr; child = child->next) {
         ui_layout_calc_upwards_dependent(child, axis);
     }
 }
 
-internal void ui_layout_calc_downwards_dependent(UI_Box *box, Axis2 axis) {
-    for (UI_Box *child = box->first; child != nullptr; child = child->next) {
+internal void ui_layout_calc_downwards_dependent(UI_Box *root, Axis2 axis) {
+    for (UI_Box *child = root->first; child != nullptr; child = child->next) {
         ui_layout_calc_downwards_dependent(child, axis);
     }
 
-    if (box->pref_size[axis].type == UI_SIZE_CHILDREN_SUM) {
-        if (box->child_layout_axis == axis) {
-            //@Note Add sizes of children if calculating the layout axis
-            for (UI_Box *child = box->first; child != nullptr; child = child->next) {
-                box->fixed_size[axis] += child->fixed_size[axis];
+    if (root->pref_size[axis].type == UI_SIZE_CHILDREN_SUM) {
+        if (root->child_layout_axis == axis) {
+            //@Note Add sizes of children if on the layout axis
+            for (UI_Box *child = root->first; child != nullptr; child = child->next) {
+                root->fixed_size[axis] += child->fixed_size[axis];
             }
         } else {
             //@Note Get max children size if not on layout axis
             f32 max = 0.0f;
-            for (UI_Box *child = box->first; child != nullptr; child = child->next) {
+            for (UI_Box *child = root->first; child != nullptr; child = child->next) {
                 if (child->fixed_size[axis] > max) max = child->fixed_size[axis];
             }
-            box->fixed_size[axis] = max;
+            root->fixed_size[axis] = max;
         }
     }
 }
 
-internal void ui_layout_resolve_violations(UI_Box *box, Axis2 axis) {
+internal void ui_layout_resolve_violations(UI_Box *root, Axis2 axis) {
+    //@Note Resolve by basic clipping if not on the layout axis
+    if (axis != root->child_layout_axis) {
+        f32 max_size = root->fixed_size[axis];
+        for (UI_Box *child = root->first; child != nullptr; child = child->next) {
+            f32 child_size = child->fixed_size[axis];
+            f32 violation = child_size - max_size;
+            if (violation > 0) {
+                child_size -= violation;
+            }
+            child->fixed_size[axis] = child_size;
+        }
+    }
+
+    //@Note Resolve by doing percent fixup if on the layout axis
+    if (axis == root->child_layout_axis) {
+        f32 max_size = root->fixed_size[axis];
+        f32 total_size = 0.f;
+        f32 total_weighted_size = 0.f;
+        for (UI_Box *child = root->first; child != nullptr; child = child->next) {
+            if (!(child->flags & UI_BOX_FLOATING_X<<axis)) {
+                total_size += child->fixed_size[axis];
+                total_weighted_size += child->fixed_size[axis] * (1 - child->pref_size[axis].strictness);
+            }
+        }
+
+        f32 violation = total_size - max_size;
+        for (UI_Box *child = root->first; child != nullptr; child = child->next) {
+            if (!(child->flags & UI_BOX_FLOATING_X<<axis)) {
+                f32 fixup = child->fixed_size[axis] * (1 - child->pref_size[axis].strictness);
+                f32 fix_pct = violation / total_weighted_size;
+                fix_pct = Clamp(fix_pct, 0, 1);
+                child->fixed_size[axis] -= fixup * fix_pct;
+            }
+        }
+    }
+
+    //@Note Fixup upwards-relative sizes
+    if (root->flags & (UI_BOX_OVERFLOW_X << axis)) {
+        for (UI_Box *child = root->first; child != nullptr; child = child->next) {
+            if (child->pref_size[axis].type == UI_SIZE_PARENT_PERCENT) {
+                child->fixed_size[axis] = root->fixed_size[axis] * child->pref_size[axis].value;
+            }
+        }
+    }
     
+    for (UI_Box *child = root->first; child != nullptr; child = child->next) {
+        ui_layout_resolve_violations(child, axis);
+    }
 }
 
-internal void ui_layout_place_boxes(UI_Box *box, Axis2 axis) {
+internal void ui_layout_place_boxes(UI_Box *root, Axis2 axis) {
     f32 p = 0.f;
-    UI_Box *parent = box->parent;
+    UI_Box *parent = root->parent;
     if (parent) {
         p = parent->fixed_position[axis];
-        if (!(box->flags & (UI_BOX_FLOATING_X << axis))) {
+        if (!(root->flags & (UI_BOX_FLOATING_X << axis))) {
             //@Note Add up sibling sizes if on the layout axis, so that we "grow" in the layout
             if (axis == parent->child_layout_axis) {
-                for (UI_Box *sibling = parent->first; sibling != box; sibling = sibling->next) {
+                for (UI_Box *sibling = parent->first; sibling != root; sibling = sibling->next) {
                     p += sibling->fixed_size[axis];
                 }
             }
         }
     }
-    p += box->fixed_position[axis];
+    p += root->fixed_position[axis];
 
-    box->rect.p0[axis] = p;
-    box->rect.p1[axis] = p + box->fixed_size[axis];
+    root->rect.p0[axis] = p;
+    root->rect.p1[axis] = p + root->fixed_size[axis];
     
-    for (UI_Box *child = box->first; child != nullptr; child = child->next) {
+    for (UI_Box *child = root->first; child != nullptr; child = child->next) {
         ui_layout_place_boxes(child, axis);
     }
 }
@@ -533,6 +589,7 @@ internal void ui_layout_apply(UI_Box *root) {
         ui_layout_calc_fixed(root, axis);
         ui_layout_calc_upwards_dependent(root, axis);
         ui_layout_calc_downwards_dependent(root, axis);
+        ui_layout_resolve_violations(root, axis);
         ui_layout_place_boxes(root, axis);
     }
 }

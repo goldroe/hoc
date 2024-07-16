@@ -56,10 +56,12 @@ enum UI_Box_Flags {
     UI_BOX_HOVERABLE           = (1<<1),
     UI_BOX_KEYBOARD_INPUT      = (1<<2),
 
-    UI_BOX_FLOATING_X          = (1<<10),
-    UI_BOX_FLOATING_Y          = (1<<11),
-    UI_BOX_FIXED_WIDTH         = (1<<12),
-    UI_BOX_FIXED_HEIGHT        = (1<<13),
+    UI_BOX_FLOATING_X          = (1<<8),
+    UI_BOX_FLOATING_Y          = (1<<9),
+    UI_BOX_FIXED_WIDTH         = (1<<10),
+    UI_BOX_FIXED_HEIGHT        = (1<<11),
+    UI_BOX_OVERFLOW_X          = (1<<12),
+    UI_BOX_OVERFLOW_Y          = (1<<13),
 
     UI_BOX_DRAW_BACKGROUND     = (1<<16),
     UI_BOX_DRAW_BORDER         = (1<<17),
@@ -70,8 +72,8 @@ enum UI_Box_Flags {
 EnumDefineFlagOperators(UI_Box_Flags);
 
 struct UI_Box;
-typedef void (*UI_Box_Draw_Proc)(UI_Box *, void *);
 #define UI_BOX_CUSTOM_DRAW_PROC(name) void name(UI_Box *box, void *user_data)
+typedef UI_BOX_CUSTOM_DRAW_PROC(UI_Box_Draw_Proc);
 
 struct UI_Box {
     UI_Box *hash_prev = nullptr;
@@ -106,8 +108,8 @@ struct UI_Box {
     v2 view_offset;
     v2 view_offset_target;
 
-    void *box_draw_data;
-    UI_Box_Draw_Proc custom_draw_proc;
+    void *draw_data;
+    UI_Box_Draw_Proc *custom_draw_proc;
 };
 
 enum UI_Event_Type {
@@ -183,10 +185,11 @@ struct UI_State {
 };
 
 enum UI_Signal_Flags {
-    UI_SIGNAL_CLICKED  = (1 << 0),
-    UI_SIGNAL_PRESSED  = (1 << 1),
-    UI_SIGNAL_RELEASED = (1 << 2),
-    UI_SIGNAL_HOVER    = (1 << 3),
+    UI_SIGNAL_CLICKED  = (1<<0),
+    UI_SIGNAL_PRESSED  = (1<<1),
+    UI_SIGNAL_RELEASED = (1<<2),
+    UI_SIGNAL_HOVER    = (1<<3),
+    UI_SIGNAL_SCROLL   = (1<<4),
 };
 EnumDefineFlagOperators(UI_Signal_Flags);
 
@@ -202,6 +205,7 @@ struct UI_Signal {
 #define ui_clicked(sig) ((sig).flags & UI_SIGNAL_CLICKED)
 #define ui_hover(sig)   ((sig).flags & UI_SIGNAL_PRESSED)
 #define ui_pressed(sig) ((sig).flags & UI_SIGNAL_PRESSED)
+#define ui_scroll(sig)  ((sig).flags & UI_SIGNAL_SCROLL)
 
 internal bool point_in_rect(v2 v, Rect rect);
 
@@ -259,7 +263,7 @@ internal UI_Box *ui_make_box_from_string(UI_Box_Flags flags, String8 string);
 internal UI_Box *ui_box_from_hash(UI_Hash hash);
 internal UI_Signal ui_signal_from_box(UI_Box *box);
 
-internal v2 ui_mouse();
+internal v2 ui_get_mouse();
 internal bool ui_mouse_over_box(UI_Box *box);
 
 internal UI_Hash ui_hash(String8 text);
