@@ -1,5 +1,3 @@
-#include "core_strings.h"
-
 internal u64 cstr8_length(const char *c) {
     if (c == nullptr) return 0;
     u64 result = 0;

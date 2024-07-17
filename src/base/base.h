@@ -1,4 +1,5 @@
-#pragma once
+#ifndef BASE_H
+#define BASE_H
 
 #define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
@@ -150,3 +151,5 @@ union Rect {
         v2 p1;
     };
 };
+
+#endif // BASE_H

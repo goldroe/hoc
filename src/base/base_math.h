@@ -1,4 +1,6 @@
-#pragma once
+#ifndef BASE_MATH_H
+#define BASE_MATH_H
+
 #include <math.h>
 #ifndef PI
     #define PI    3.14159265358979323846f
@@ -144,3 +146,5 @@ inline bool operator!=(v4 a, v4 b) {return !(a == b);}
 
 inline m4 operator*(m4 a, m4 b) {m4 result = mul_m4(a, b); return result;}
 #endif // __cplusplus
+
+#endif // BASE_MATH_H

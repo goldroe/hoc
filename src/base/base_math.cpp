@@ -1,5 +1,3 @@
-#include "core_math.h"
-
 internal m4 identity_m4() {
     m4 result{};
     result._00 = 1.0f;

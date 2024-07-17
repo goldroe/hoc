@@ -1,5 +1,3 @@
-#include "core_arena.h"
-
 internal ALLOC_COMMIT_SIG(virtual_allocator_commit) {
     void *result = nullptr;
     result = VirtualAlloc(NULL, bytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
@@ -28,8 +26,8 @@ internal ALLOC_RELEASE_SIG(malloc_allocator_release) {
     free(address);
 }
 
-internal Core_Allocator *get_virtual_allocator() {
-    local_persist Core_Allocator allocator = {};
+internal Base_Allocator *get_virtual_allocator() {
+    local_persist Base_Allocator allocator = {};
     if (!allocator.commit_procedure) {
         // virtual_allocator.reserve_procedure = virtual
         allocator.commit_procedure  = virtual_allocator_commit;
@@ -38,8 +36,8 @@ internal Core_Allocator *get_virtual_allocator() {
     return &allocator; 
 }
 
-internal Core_Allocator *get_malloc_allocator() {
-    local_persist Core_Allocator allocator = {};
+internal Base_Allocator *get_malloc_allocator() {
+    local_persist Base_Allocator allocator = {};
     if (!allocator.commit_procedure) {
         // allocator.reserve_procedure = malloc
         allocator.commit_procedure  =  malloc_allocator_commit;
@@ -48,7 +46,7 @@ internal Core_Allocator *get_malloc_allocator() {
     return &allocator; 
 }
 
-internal Arena *arena_alloc(Core_Allocator *allocator, u64 size) {
+internal Arena *arena_alloc(Base_Allocator *allocator, u64 size) {
     size += ARENA_HEADER_SIZE;
     // size = AlignForward(size, 8);
     void *memory = allocator->commit_procedure(size);
@@ -65,7 +63,7 @@ internal Arena *arena_alloc(Core_Allocator *allocator, u64 size) {
     return arena; 
 }
 
-internal Arena *make_arena(Core_Allocator *allocator) {
+internal Arena *make_arena(Base_Allocator *allocator) {
     Arena *arena = arena_alloc(allocator, KB(64));
     return arena;
 }
