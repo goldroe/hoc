@@ -25,4 +25,4 @@ set LINKER_FLAGS=%COMMON_LINKER_FLAGS% %LIBS%
 
 rem CL %COMPILER_FLAGS% src\meta\meta_generator.cpp /Femeta_generator.exe /link %COMMON_LINKER_FLAGS%
 
-CL %COMPILER_FLAGS% src\hoc.cpp /Fehoc.exe /link %LINKER_FLAGS%
+CL %COMPILER_FLAGS% src\hoc\hoc_main.cpp /Fehoc.exe /link %LINKER_FLAGS%

@@ -136,10 +136,10 @@ internal Line_Ending detect_line_ending(String8 string) {
 }
 
 internal void buffer_init_contents(Hoc_Buffer *buffer, String8 file_name, String8 string) {
-    Core_Allocator *core_allocator = get_malloc_allocator();
-    buffer->file_path = path_strip_dir_name(arena_alloc(core_allocator, file_name.count + 1), file_name);
+    Base_Allocator *base_allocator = get_malloc_allocator();
+    buffer->file_path = path_strip_dir_name(arena_alloc(base_allocator, file_name.count + 1), file_name);
     printf("dir_name: %s\n", buffer->file_path.data);
-    buffer->file_name = str8_copy(arena_alloc(core_allocator, file_name.count + 1), file_name);
+    buffer->file_name = str8_copy(arena_alloc(base_allocator, file_name.count + 1), file_name);
     buffer->text = string.data;
     buffer->gap_start = 0;
     buffer->gap_end = 0;

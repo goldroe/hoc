@@ -1,10 +1,10 @@
 #include <ft2build.h>
 #include <freetype/freetype.h>
 
-#include "core/core.h"
-#include "core/core_arena.h"
-#include "core/core_strings.h"
-#include "core/core_math.h"
+#include "base/base.h"
+#include "base/base_arena.h"
+#include "base/base_strings.h"
+#include "base/base_math.h"
 
 #pragma warning(push)
 #pragma warning( disable : 4244)
@@ -19,37 +19,37 @@
 #include "auto_array.h"
 #include "utils.h"
 #include "os/os.h"
-#include "path.h"
-#include "font.h"
-#include "lexer.h"
+#include "path/path.h"
+#include "font/font.h"
+#include "lexer/lexer.h"
 #include "ui/ui_core.h"
 #include "ui/ui_widgets.h"
-#include "render_core.h"
-#include "render_d3d11.h"
-#include "draw.h"
-#include "hoc.h"
+#include "render/render_core.h"
+#include "render/render_d3d11.h"
+#include "draw/draw.h"
+#include "hoc/hoc.h"
 #include "hoc/hoc_buffer.h"
 #include "hoc/hoc_editor.h"
-#include "gui.h"
+#include "gui/gui.h"
 #include "hoc/hoc_app.h"
 
-#include "core/core_math.cpp"
-#include "core/core_arena.cpp"
-#include "core/core_strings.cpp"
+#include "base/base_math.cpp"
+#include "base/base_arena.cpp"
+#include "base/base_strings.cpp"
 #include "os/os.cpp"
-#include "path.cpp"
-#include "render_d3d11.cpp"
-#include "font.cpp"
-#include "lexer.cpp"
-#include "draw.cpp"
+#include "path/path.cpp"
+#include "render/render_d3d11.cpp"
+#include "font/font.cpp"
+#include "lexer/lexer.cpp"
+#include "draw/draw.cpp"
 #include "ui/ui_core.cpp"
 #include "ui/ui_widgets.cpp"
 #include "hoc/hoc_app.cpp"
 #include "hoc/hoc_buffer.cpp"
 #include "hoc/hoc_editor.cpp"
-#include "hoc_commands.cpp"
-#include "generated_hoc_commands.cpp"
-#include "gui.cpp"
+#include "hoc/hoc_commands.cpp"
+#include "hoc/generated_hoc_commands.cpp"
+#include "gui/gui.cpp"
 
 global s64 performance_frequency;
 
@@ -303,7 +303,7 @@ internal void draw_ui_box(UI_Box *box) {
         draw_rect(box->rect, box->background_color);
     }
     if (box->flags & UI_BOX_DRAW_BORDER) {
-        // draw_rect_outline(box->rect, box->border_color);
+        draw_rect_outline(box->rect, box->border_color);
     }
     if (box->flags & UI_BOX_DRAW_TEXT) {
         v2 text_position = ui_get_text_position(box);
@@ -344,6 +344,10 @@ internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handl
         UI_TextColor(V4(.24f, .22f, .21f, 1.f))
     {
         for (GUI_View *view = hoc_app->gui_views.first; view != nullptr; view = view->next) {
+            if (ui_focus_active_id() == 0 && view->type == GUI_VIEW_EDITOR) {
+                if (view->editor.box) ui_set_focus_active(view->editor.box->key);
+            }
+            
             gui_view_update(view);
         }
     }
@@ -482,11 +486,11 @@ int main(int argc, char **argv) {
         r_d3d11_state->device_context->OMSetDepthStencilState(r_d3d11_state->depth_stencil_state, 0);
         r_d3d11_state->device_context->OMSetRenderTargets(1, &r_d3d11_state->render_target_view, r_d3d11_state->depth_stencil_view);
 
-        draw_begin();
+        draw_begin(window_handle);
 
         update_and_render(&win32_events, window_handle, dt);
 
-        d3d11_render(draw_bucket);
+        d3d11_render(window_handle, draw_bucket);
 
         r_d3d11_state->swap_chain->Present(1, 0);
 

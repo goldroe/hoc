@@ -698,7 +698,7 @@ internal void ui_collect_build_boxes(UI_Box *root) {
 internal void ui_end_build() {
     ui_state->last_build_collection.reset_count();
     ui_collect_build_boxes(ui_state->root);
-    
+
     ui_state->build_index += 1;
 
     ui_state->events.first = nullptr;

@@ -96,7 +96,7 @@ struct UI_Box {
     UI_Size pref_size[AXIS_COUNT];
     Axis2 child_layout_axis = AXIS_Y;
     UI_Text_Align text_alignment = UI_TEXT_ALIGN_CENTER;
-    UI_Key next_focus_key = 0;
+    // UI_Key next_focus_key = 0;
     Face *font_face;
     v4 background_color = V4(1.f, 1.f, 1.f, 1.f);
     v4 text_color = V4();

@@ -3,18 +3,31 @@
 global Arena *draw_arena;
 global Draw_Bucket *draw_bucket;
 
-internal void draw_begin() {
+internal void draw_begin(OS_Handle window_handle) {
     if (draw_arena == nullptr) {
         draw_arena = arena_alloc(get_malloc_allocator(), MB(16));
     }
 
     draw_bucket = push_array(draw_arena, Draw_Bucket, 1);
     *draw_bucket = {};
+
+    v2 window_dim = os_get_window_dim(window_handle);
+    draw_bucket->clip = make_rect(0.f, 0.f, window_dim.x, window_dim.y);
 }
 
 internal void draw_end() {
     arena_clear(draw_arena);
     draw_bucket = nullptr;
+}
+
+internal void draw_set_clip(Rect clip) {
+    draw_bucket->clip = clip;
+    R_Batch_Node *node = draw_bucket->batches.last;
+    node = push_array(draw_arena, R_Batch_Node, 1);
+    node->batch.v = (u8 *)draw_arena->current + draw_arena->current->pos;
+    node->batch.params.type = R_PARAMS_UI;
+    node->batch.params.ui.tex = draw_bucket->tex;
+    // node->batch.params.
 }
 
 internal void draw_batch_push_vertex(R_Batch *batch, R_2D_Vertex src) {
@@ -41,6 +54,7 @@ internal void draw_string(String8 string, Face *font_face, v4 color, v2 offset) 
         node->batch.v = (u8 *)draw_arena->current + draw_arena->current->pos;
         node->batch.params.type = R_PARAMS_UI;
         node->batch.params.ui.tex = font_face->texture;
+        node->batch.params.ui.clip = draw_bucket->clip;
         draw_push_batch_node(&draw_bucket->batches, node);
         draw_bucket->tex = font_face->texture;
     }
@@ -90,6 +104,7 @@ internal void draw_rect(Rect dst, v4 color) {
         node->batch.v = (u8 *)draw_arena->current + draw_arena->current->pos;
         node->batch.params.type = R_PARAMS_UI;
         node->batch.params.ui.tex = nullptr;
+        node->batch.params.ui.clip = draw_bucket->clip;
         draw_push_batch_node(&draw_bucket->batches, node);
 
         draw_bucket->tex = nullptr;

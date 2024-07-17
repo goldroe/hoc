@@ -225,7 +225,7 @@ internal void d3d11_resize_render_target_view(UINT width, UINT height) {
     r_d3d11_state->device_context->OMSetRenderTargets(1, &r_d3d11_state->render_target_view, r_d3d11_state->depth_stencil_view);
 }
 
-internal void d3d11_render(Draw_Bucket *draw_bucket) {
+internal void d3d11_render(OS_Handle window_handle, Draw_Bucket *draw_bucket) {
     r_d3d11_state->device_context->OMSetBlendState(r_d3d11_state->blend_state, NULL, 0xffffffff);
     r_d3d11_state->device_context->PSSetSamplers(0, 1, &r_d3d11_state->sampler);
 
@@ -247,9 +247,13 @@ internal void d3d11_render(Draw_Bucket *draw_bucket) {
             if (tex == nullptr) {
                 tex = r_d3d11_state->fallback_tex;
             }
+            
+            // Rect clip = params.ui.clip;
+            // D3D11_RECT d3d_clip = rect_to_d3d11_rect(clip);
+            // r_d3d11_state->device_context->RSSetScissorRects(1, &d3d_clip);
 
             r_d3d11_state->device_context->PSSetShaderResources(0, 1, (ID3D11ShaderResourceView **)&tex);
-            
+
             ID3D11VertexShader *vertex_shader = r_d3d11_state->vertex_shaders[D3D11_SHADER_UI];
             ID3D11PixelShader *pixel_shader = r_d3d11_state->pixel_shaders[D3D11_SHADER_UI];
             r_d3d11_state->device_context->VSSetShader(vertex_shader, nullptr, 0);

@@ -13,6 +13,7 @@ enum R_Params_Type {
 
 struct R_Params_UI {
     m4 xform;
+    Rect clip;
     void *tex;
 };
 

@@ -4,6 +4,7 @@
 struct Draw_Bucket {
     m4 xform;
     void *tex;
+    Rect clip;
     R_Batch_List batches;
 };
 

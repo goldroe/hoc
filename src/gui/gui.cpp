@@ -48,7 +48,7 @@ internal Cursor editor_mouse_to_cursor(GUI_Editor *gui_editor, v2 mouse) {
 }
 
 internal GUI_View *make_gui_view() {
-    Core_Allocator *allocator = get_malloc_allocator();
+    Base_Allocator *allocator = get_malloc_allocator();
     GUI_View *view = (GUI_View *)arena_alloc(allocator, sizeof(GUI_View));
     view->id = hoc_app->view_id_counter++;
     view->prev = nullptr;
@@ -90,23 +90,24 @@ internal UI_BOX_CUSTOM_DRAW_PROC(draw_gui_editor) {
     String8 string_before_cursor = box->string;
     string_before_cursor.count = draw_data->editor->cursor.position;
 
-    draw_rect(box->rect, box->background_color);
+    // Draw_Clip(box->rect) {
+        draw_rect(box->rect, box->background_color);
+        
+        v2 text_position = ui_get_text_position(box);
+        text_position += box->view_offset;
+        draw_string(box->string, box->font_face, box->text_color, text_position);
 
-    v2 text_position = ui_get_text_position(box);
-    text_position += box->view_offset;
-    draw_string(box->string, box->font_face, box->text_color, text_position);
-
-    v2 cursor_pos = box->rect.p0 + measure_string_size(string_before_cursor, box->font_face) + box->view_offset;
-    Rect cursor_rect = make_rect(cursor_pos.x, cursor_pos.y, 2.f, box->font_face->glyph_height);
-    v4 cursor_color = box->text_color;
-    // cursor_color *= (1.f - draw_data->editor->cursor_dt);
-    // draw_data->editor->cursor_dt += ui_animation_dt();
-    // draw_data->editor->cursor_dt = ClampBot(draw_data->editor->cursor_dt, 0.f);
-    if (box->key == ui_focus_active_id()) {
+        v2 cursor_pos = box->rect.p0 + measure_string_size(string_before_cursor, box->font_face) + box->view_offset;
+        Rect cursor_rect = make_rect(cursor_pos.x, cursor_pos.y, 1.f, box->font_face->glyph_height);
+        v4 cursor_color = box->text_color;
+        // cursor_color *= (1.f - draw_data->editor->cursor_dt);
+        // draw_data->editor->cursor_dt += ui_animation_dt();
+        // draw_data->editor->cursor_dt = ClampBot(draw_data->editor->cursor_dt, 0.f);
+        if (box->key == ui_focus_active_id()) {
+            cursor_rect.x1 += 1.f;
+        }
         draw_rect(cursor_rect, cursor_color);
-    } else {
-        draw_rect_outline(cursor_rect, cursor_color);
-    }
+    // }
 }
 
 internal void gui_file_system_load_files(GUI_File_System *fs) {
@@ -148,7 +149,6 @@ internal void gui_view_update(GUI_View *view) {
         UI_Box *container_body = ui_make_box_from_stringf(UI_BOX_NIL, "editor_container_%s", file_name);
 
         UI_Box *code_body = nullptr;
-        UI_Box *bottom_bar = nullptr;
         UI_Signal signal{};
 
         UI_Parent(container_body)
@@ -162,7 +162,7 @@ internal void gui_view_update(GUI_View *view) {
             ui_set_next_pref_height(ui_pct(1.f, 0.f));
             ui_set_next_child_layout(AXIS_Y);
             UI_Box *editor_body = ui_make_box_from_stringf(UI_BOX_NIL, "edit_body_%s", file_name);
-        
+
             UI_Parent(editor_body)
             {
                 //@Note Code body
@@ -180,7 +180,7 @@ internal void gui_view_update(GUI_View *view) {
                 ui_set_next_pref_width(ui_pct(1.f, 1.f));
                 ui_set_next_pref_height(ui_text_dim(2.f, 1.f));
                 ui_set_next_background_color(V4(.94f, .94f, .94f, 1.f));
-                bottom_bar = ui_make_box_from_stringf(UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, "-\\**-  %s  (%lld,%lld) %d:%d###bottom_bar_%s", file_name, editor->cursor.line, editor->cursor.col, hour, minute, file_name);
+                UI_Box *bottom_bar = ui_make_box_from_stringf(UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, "-\\**-  %s  (%lld,%lld) %d:%d###bottom_bar_%s", file_name, editor->cursor.line, editor->cursor.col, hour, minute, file_name);
             }
 
             ui_set_next_background_color(V4(.94f, .94f, .94f, 1.f));
@@ -189,7 +189,7 @@ internal void gui_view_update(GUI_View *view) {
                 gui_editor->scroll_pt = ui_get_mouse().y;
             }
         }
-        
+
         code_body->view_offset_target.y = -gui_editor->scroll_pt;
 
         gui_editor->active_text_input = signal.text;
@@ -291,7 +291,6 @@ internal void gui_view_update(GUI_View *view) {
         if (kill_file_system) {
             remove_gui_view(view);
         }
-
         break;
     }
     }

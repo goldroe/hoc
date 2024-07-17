@@ -34,19 +34,22 @@ struct UI_Line_Edit_Draw_Data {
 
 internal UI_BOX_CUSTOM_DRAW_PROC(ui_draw_line_edit) {
     UI_Line_Edit_Draw_Data *draw_data = (UI_Line_Edit_Draw_Data *)user_data;
-    draw_rect(box->rect, box->background_color);
 
-    v2 text_position = ui_get_text_position(box);
-    text_position += box->view_offset;
-    draw_string(draw_data->edit_string, box->font_face, box->text_color, text_position);
+    // Draw_Clip(box->rect) {
+        draw_rect(box->rect, box->background_color);
 
-    String8 string_before_cursor = draw_data->edit_string;
-    string_before_cursor.count = (u64)draw_data->cursor;
-    v2 c_pos = text_position + measure_string_size(string_before_cursor, box->font_face);
-    Rect c_rect = make_rect(c_pos.x, c_pos.y, 2.f, box->font_face->glyph_height);
-    if (box->key == ui_focus_active_id()) {
-        draw_rect(c_rect, box->text_color);
-    }
+        v2 text_position = ui_get_text_position(box);
+        text_position += box->view_offset;
+        draw_string(draw_data->edit_string, box->font_face, box->text_color, text_position);
+
+        String8 string_before_cursor = draw_data->edit_string;
+        string_before_cursor.count = (u64)draw_data->cursor;
+        v2 c_pos = text_position + measure_string_size(string_before_cursor, box->font_face);
+        Rect c_rect = make_rect(c_pos.x, c_pos.y, 2.f, box->font_face->glyph_height);
+        if (box->key == ui_focus_active_id()) {
+            draw_rect(c_rect, box->text_color);
+        }
+    // }
 }
 
 internal UI_Signal ui_line_edit(String8 name, void *buffer, u64 max_buffer_capacity, u64 *buffer_pos,  u64 *buffer_count) {
