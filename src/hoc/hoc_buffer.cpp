@@ -6,16 +6,6 @@
 #define GAP_SIZE(Buffer) (Buffer->gap_end - Buffer->gap_start)
 #define BUFFER_SIZE(Buffer) (Buffer->end - GAP_SIZE(Buffer))
 
-internal void push_buffer(Hoc_Buffer *buffer) {
-    if (hoc_app->buffers.first) {
-        buffer->prev = hoc_app->buffers.last;
-        hoc_app->buffers.last->next = buffer;
-        hoc_app->buffers.last = buffer;
-    } else {
-        hoc_app->buffers.first = hoc_app->buffers.last = buffer;
-    }
-}
-
 internal String8 buffer_to_string(Arena *arena, Hoc_Buffer *buffer) {
     s64 buffer_length = buffer_get_length(buffer);
     String8 result{};
@@ -138,7 +128,6 @@ internal Line_Ending detect_line_ending(String8 string) {
 internal void buffer_init_contents(Hoc_Buffer *buffer, String8 file_name, String8 string) {
     Base_Allocator *base_allocator = get_malloc_allocator();
     buffer->file_path = path_strip_dir_name(arena_alloc(base_allocator, file_name.count + 1), file_name);
-    printf("dir_name: %s\n", buffer->file_path.data);
     buffer->file_name = str8_copy(arena_alloc(base_allocator, file_name.count + 1), file_name);
     buffer->text = string.data;
     buffer->gap_start = 0;
@@ -174,8 +163,9 @@ internal Hoc_Buffer *make_buffer(String8 file_name) {
         buffer_init_contents(buffer, file_name, string);
         buffer->line_ending = LINE_ENDING_LF;
     }
-    push_buffer(buffer);
-
+    
+    DLLPushBack(hoc_app->buffers.first, hoc_app->buffers.last, buffer, next, prev);
+    hoc_app->buffers.count += 1;
     return buffer;
 }
 

@@ -37,6 +37,26 @@ inline ENUMTYPE &operator ^=(ENUMTYPE &a, ENUMTYPE b) { return (ENUMTYPE &)(((in
 #define EnumDefineFlagOperators(ENUMTYPE) // NOP, C allows these operators.
 #endif 
 
+//@Note Linked List helper macros
+
+#define DLLRemove(f,l,n,next,prev) (((n)==(f) ? (f) = (n)->next : 0),   \
+        ((n) == (l) ? (l) = (l)->prev : 0),                             \
+        ((n)->prev != NULL ? ((n)->prev->next = (n)->next) : 0),        \
+        ((n)->next != NULL ? ((n)->next->prev = (n)->prev) : 0))
+#define DLLPushBack(f,l,n,next,prev) (((f)==NULL)?\
+        ((f)=(l)=(n),(n)->prev=NULL,(n)->next=NULL):\
+        ((l)->next=(n),(n)->prev=(l),(l)=(n),(n)->next=NULL))
+
+#define SLLQueuePush(f,l,n) (((f)==NULL)?\
+        ((f)=(l)=(n),(n)->next=NULL):           \
+        ((l)->next=(n),(l)=(n),(n)->next=NULL))
+#define SLLQueuePop(f,l,n) (((f)==(l))?         \
+        (((f)=NULL, (l)=NULL)):                 \
+        ((f)=(f)->next))
+
+#define SLLStackPush(f,n) ((n)->next = (f),(f)=(n))
+#define SLLStackPop(f)    ((f) = (f)->next)
+
 #define Introspect
 #define ArrayCount(array) (sizeof((array)) / sizeof((array)[0]))
 #define DeferLoop(begin, end) for(int _i_ = ((begin), 0); !_i_; _i_ += 1, (end))

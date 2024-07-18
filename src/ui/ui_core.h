@@ -1,10 +1,6 @@
 #ifndef UI_CORE_H
 #define UI_CORE_H
 
-// extern Face *ui_face;
-
-struct Face;
-
 typedef u64 UI_Key;
 
 template <class T>

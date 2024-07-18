@@ -170,13 +170,7 @@ internal OS_Event *win32_push_event(OS_Event_Type type) {
     result->type = type;
     result->next = nullptr;
     result->flags = os_event_flags();
-    OS_Event *last = win32_events.last;
-    if (last) {
-        last->next = result;
-    } else {
-        win32_events.first = result;
-    }
-    win32_events.last = result;
+    SLLQueuePush(win32_events.first, win32_events.last, result);
     win32_events.count += 1;
     return result;
 }
@@ -343,7 +337,14 @@ internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handl
         UI_BorderColor(V4(.2f, .19f, .18f, 1.f))
         UI_TextColor(V4(.24f, .22f, .21f, 1.f))
     {
-        for (GUI_View *view = hoc_app->gui_views.first; view != nullptr; view = view->next) {
+        GUI_View_List *views = &hoc_app->gui_views;
+        for (GUI_View *view = views->first; view != nullptr; view = view->next) {
+            if (view->to_be_destroyed) {
+                delete_gui_view(view);
+            }
+        }
+        
+        for (GUI_View *view = views->first; view != nullptr; view = view->next) {
             if (ui_focus_active_id() == 0 && view->type == GUI_VIEW_EDITOR) {
                 if (view->editor.box) ui_set_focus_active(view->editor.box->key);
             }
@@ -381,13 +382,10 @@ int main(int argc, char **argv) {
     }
 
     String8 current_directory = path_current_dir(arg_arena);
-    printf("CD %s\n", current_directory.data);
 
     if (path_is_relative(file_name)) {
         file_name = str8_concat(arg_arena, current_directory, file_name);
     }
-
-    printf("file name: %s\n", file_name.data);
 
     QueryPerformanceFrequency((LARGE_INTEGER *)&performance_frequency);
     timeBeginPeriod(1);
@@ -417,7 +415,7 @@ int main(int argc, char **argv) {
     hoc_app = make_hoc_application();
     ui_set_state(ui_state_new());
 
-    default_fonts[FONT_DEFAULT] = load_font_face(str8_lit("fonts/DejaVuSansMono.ttf"), 14);
+    default_fonts[FONT_DEFAULT] = load_font_face(str8_lit("fonts/DejaVuSansMono.ttf"), 12);
     default_fonts[FONT_CODE] = load_font_face(str8_lit("fonts/DejaVuSansMono.ttf"), 12);
 
     key_map_arena = make_arena(get_malloc_allocator());
@@ -432,16 +430,6 @@ int main(int argc, char **argv) {
     def_editor->buffer = make_buffer(file_name);
     def_editor->face = default_fonts[FONT_CODE];
     
-    // View *split_view = view_new();
-    // split_view->buffer = make_buffer(str8_lit("test"));
-    // split_view->key_map = default_key_map;
-    // split_view->face = default_font_face;
-    // push_view(split_view);
-    // push_buffer(split_view->buffer);
-    // split_view->panel_dim = V2(900.f, 1000.f);
-
-    // hoc_app->active_editor = default_editor;
-
     f32 dt = 0.0f;
     srand((s32)get_wall_clock());
     s64 start_clock, last_clock;

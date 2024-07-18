@@ -28,32 +28,15 @@ internal UI_Event *ui_push_event(UI_Event_Type type) {
     result->type = type;
     result->next = nullptr;
     result->prev = nullptr;
-    
-    UI_Event *last = ui_state->events.last;
-    if (last) {
-        last->next = result;
-        result->prev = last;
-    } else {
-        ui_state->events.first = result;
-    }
-    ui_state->events.last = result;
+
+    DLLPushBack(ui_state->events.first, ui_state->events.last, result, next, prev);
     ui_state->events.count += 1;
     return result;
 }
 
 internal void ui_pop_event(UI_Event *event) {
-    UI_Event *prev = event->prev;
-    UI_Event *next = event->next;
-    if (prev) {
-        prev->next = next;
-    } else {
-        ui_state->events.first = next;
-    }
-    if (next) {
-        next->prev = prev;
-    } else {
-        ui_state->events.last = prev;
-    }
+    DLLRemove(ui_state->events.first, ui_state->events.last, event, next, prev);
+    ui_state->events.count -= 1;
 }
 
 internal v2 ui_get_mouse() {
@@ -172,14 +155,7 @@ internal UI_Box *ui_box_from_key(UI_Key key) {
 internal void ui_push_box(UI_Box *box, UI_Box *parent) {
     box->parent = parent;
     if (parent) {
-        if (parent->first) {
-            box->prev = parent->last;
-            parent->last->next = box;
-            parent->last = box;
-        } else {
-            parent->first = box;
-            parent->last = box;
-        }
+        DLLPushBack(parent->first, parent->last, box, next, prev);
         parent->child_count += 1;
     }
 }

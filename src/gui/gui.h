@@ -25,11 +25,13 @@ struct GUI_File_System {
 };
 
 struct GUI_View {
+    Arena *arena;
     GUI_View_ID id;
     GUI_View *prev;
     GUI_View *next;
     GUI_View_Type type;
     Key_Map *key_map;
+    b32 to_be_destroyed;
     union {
         GUI_Editor editor;
         GUI_File_System fs;

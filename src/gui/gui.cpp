@@ -1,30 +1,46 @@
+
+internal GUI_View *make_gui_view() {
+    Base_Allocator *allocator = get_malloc_allocator();
+    Arena *arena = arena_alloc(allocator, sizeof(GUI_View));
+    GUI_View *view = (GUI_View *)push_array(arena, GUI_View, 1);
+    view->arena = arena;
+    view->id = hoc_app->view_id_counter++;
+    view->prev = nullptr;
+    view->next = nullptr;
+    DLLPushBack(hoc_app->gui_views.first, hoc_app->gui_views.last, view, next, prev);
+    hoc_app->gui_views.count += 1;
+    return view;
+}
+
+internal GUI_View *make_gui_editor() {
+    GUI_View *view = make_gui_view();
+    view->type = GUI_VIEW_EDITOR;
+    view->editor.editor = make_editor();
+    return view;
+}
+
+internal GUI_View *make_gui_file_system() {
+    GUI_View *view = make_gui_view();
+    Arena *arena = make_arena(get_malloc_allocator());
+    view->type = GUI_VIEW_FILE_SYSTEM;
+    view->fs = {};
+    view->fs.arena = arena;
+    return view;
+}
+
 internal void remove_gui_view(GUI_View *view) {
     GUI_View_List *views = &hoc_app->gui_views;
-    GUI_View *prev = view->prev;
-    GUI_View *next = view->next;
-    if (prev) prev->next = next;
-    if (next) next->prev = prev;
-    
-    if (views->first == view && views->last == view) {
-        views->first = nullptr;
-        views->last = nullptr;
-    } else if (views->first == view) {
-        views->first = next;
-    } else if (views->last == view) {
-        views->last = prev;
-    }
+    DLLRemove(views->first, views->last, view, next, prev);
     views->count -= 1;
 }
 
-internal void push_gui_view(GUI_View *view) {
-    if (hoc_app->gui_views.first) {
-        view->prev = hoc_app->gui_views.last;
-        hoc_app->gui_views.last->next = view;
-    } else {
-        hoc_app->gui_views.first = view;
-    }
-    hoc_app->gui_views.last = view;
-    hoc_app->gui_views.count += 1;
+internal void delete_gui_view(GUI_View *view) {
+    remove_gui_view(view);
+    arena_release(view->arena);
+}
+
+internal void destroy_gui_view(GUI_View *view) {
+    view->to_be_destroyed = true;
 }
 
 internal Cursor editor_mouse_to_cursor(GUI_Editor *gui_editor, v2 mouse) {
@@ -45,32 +61,6 @@ internal Cursor editor_mouse_to_cursor(GUI_Editor *gui_editor, v2 mouse) {
         result = get_cursor_from_position(editor->buffer, position);
     }
     return result;
-}
-
-internal GUI_View *make_gui_view() {
-    Base_Allocator *allocator = get_malloc_allocator();
-    GUI_View *view = (GUI_View *)arena_alloc(allocator, sizeof(GUI_View));
-    view->id = hoc_app->view_id_counter++;
-    view->prev = nullptr;
-    view->next = nullptr;
-    push_gui_view(view);
-    return view;
-}
-
-internal GUI_View *make_gui_editor() {
-    GUI_View *view = make_gui_view();
-    view->type = GUI_VIEW_EDITOR;
-    view->editor.editor = make_editor();
-    return view;
-}
-
-internal GUI_View *make_gui_file_system() {
-    GUI_View *view = make_gui_view();
-    Arena *arena = make_arena(get_malloc_allocator());
-    view->type = GUI_VIEW_FILE_SYSTEM;
-    view->fs = {};
-    view->fs.arena = arena;
-    return view;
 }
 
 internal u16 os_key_to_key_mapping(OS_Key key, OS_Event_Flags modifiers) {
@@ -124,7 +114,6 @@ internal void gui_file_system_load_files(GUI_File_System *fs) {
         } while (find_next_file(fs->arena, find_handle, &file_data));
         find_close(find_handle);
     } else {
-        printf("failed find_first_file\n");
     }
     arena_release(scratch);
 }
@@ -240,7 +229,6 @@ internal void gui_view_update(GUI_View *view) {
         ui_set_next_child_layout(AXIS_Y);
         UI_Box *fs_container = ui_make_box_from_stringf(UI_BOX_OVERFLOW_Y, "file_system_%d", view->id);
 
-        bool kill_file_system = false;
         Arena *scratch = make_arena(get_malloc_allocator());
 
         UI_BackgroundColor(V4(.4f, .4f, .4f, 1.f))
@@ -266,11 +254,11 @@ internal void gui_view_update(GUI_View *view) {
                 String8 file_path = str8_copy(scratch, str8(fs->path_buffer, fs->path_len));
                 if (os_file_exists(file_path)) {
                     gui_editor->editor->buffer = make_buffer(file_path);
-                    kill_file_system = true;
+                    destroy_gui_view(view);
                 }
             }
             if (prompt_sig.key == OS_KEY_ESCAPE) {
-                kill_file_system = true;
+                destroy_gui_view(view);
             }
         
             for (int i = 0; i < fs->sub_file_count; i++) {
@@ -282,15 +270,12 @@ internal void gui_view_update(GUI_View *view) {
                     String8 file_path = str8(fs->path_buffer, fs->path_len);
                     file_path = str8_concat(scratch, file_path, sub_path);
                     gui_editor->editor->buffer = make_buffer(file_path);
-                    kill_file_system = true;
+                    destroy_gui_view(view);
                 }
             }
         }
 
         arena_release(scratch);
-        if (kill_file_system) {
-            remove_gui_view(view);
-        }
         break;
     }
     }
