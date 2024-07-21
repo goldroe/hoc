@@ -1,5 +1,5 @@
-#ifndef BASE_H
-#define BASE_H
+#ifndef BASE_CORE_H
+#define BASE_CORE_H
 
 #define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
@@ -106,6 +106,14 @@ enum Axis2 {
     AXIS_COUNT
 };
 
+union Rng_U64 {
+    struct {
+        u64 min;
+        u64 max;
+    };
+    u64 v[2];
+};
+
 union v2i {
     struct {
         int x;
@@ -172,4 +180,5 @@ union Rect {
     };
 };
 
-#endif // BASE_H
+#endif // BASE_CORE_H
+
