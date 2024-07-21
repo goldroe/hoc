@@ -1,7 +1,7 @@
 #include <ft2build.h>
 #include <freetype/freetype.h>
 
-#include "base/base.h"
+#include "base/base_core.h"
 #include "base/base_arena.h"
 #include "base/base_strings.h"
 #include "base/base_math.h"
@@ -17,7 +17,6 @@
 #include <stb_sprintf.h>
 
 #include "auto_array.h"
-#include "utils.h"
 #include "os/os.h"
 #include "path/path.h"
 #include "font/font.h"
@@ -33,6 +32,7 @@
 #include "gui/gui.h"
 #include "hoc/hoc_app.h"
 
+#include "base/base_core.cpp"
 #include "base/base_math.cpp"
 #include "base/base_arena.cpp"
 #include "base/base_strings.cpp"
@@ -292,32 +292,6 @@ internal inline f32 get_seconds_elapsed(s64 start, s64 end) {
     return result;
 }
 
-internal void draw_ui_box(UI_Box *box) {
-    if (box->flags & UI_BOX_DRAW_BACKGROUND) {
-        draw_rect(box->rect, box->background_color);
-    }
-    if (box->flags & UI_BOX_DRAW_BORDER) {
-        draw_rect_outline(box->rect, box->border_color);
-    }
-    if (box->flags & UI_BOX_DRAW_TEXT) {
-        v2 text_position = ui_get_text_position(box);
-        text_position += box->view_offset;
-        draw_string(box->string, box->font_face, box->text_color, text_position);
-    }
-}
-
-internal void draw_ui_layout(UI_Box *box) {
-    if (box->custom_draw_proc) {
-        box->custom_draw_proc(box, box->draw_data);
-    } else if (box != ui_get_root()) {
-        draw_ui_box(box);
-    }
-
-    for (UI_Box *child = box->first; child != nullptr; child = child->next) {
-        draw_ui_layout(child);
-    }
-}
-
 internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handle, f32 dt) {
     ui_begin_build(dt, window_handle, os_events);
 
@@ -333,9 +307,9 @@ internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handl
     // }
 
     UI_Parent(main_body)
-        UI_BackgroundColor(V4(.98f, .96f, .84f, 1.f))
+        UI_TextColor(V4(.92f, .86f, .7f, 1.f))
+        UI_BackgroundColor(V4(.16f, .16f, .16f, 1.f))
         UI_BorderColor(V4(.2f, .19f, .18f, 1.f))
-        UI_TextColor(V4(.24f, .22f, .21f, 1.f))
     {
         GUI_View_List *views = &hoc_app->gui_views;
         for (GUI_View *view = views->first; view != nullptr; view = view->next) {
@@ -345,16 +319,16 @@ internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handl
         }
         
         for (GUI_View *view = views->first; view != nullptr; view = view->next) {
-            if (ui_focus_active_id() == 0 && view->type == GUI_VIEW_EDITOR) {
-                if (view->editor.box) ui_set_focus_active(view->editor.box->key);
-            }
+            // if (ui_key_match(0, ui_state->focus_active_box_key) && view->type == GUI_VIEW_EDITOR) {
+            //     if (view->editor.box) ui_state->focus_active_box_key = view->editor.box->key;
+            // }
             
             gui_view_update(view);
         }
     }
 
-    ui_layout_apply(ui_state->root);
-    draw_ui_layout(ui_state->root);
+    ui_layout_apply(ui_root());
+    draw_ui_layout(ui_root());
 
     ui_end_build();
 }
@@ -381,7 +355,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    String8 current_directory = path_current_dir(arg_arena);
+    String8 current_directory = os_current_dir(arg_arena);
 
     if (path_is_relative(file_name)) {
         file_name = str8_concat(arg_arena, current_directory, file_name);
@@ -415,8 +389,8 @@ int main(int argc, char **argv) {
     hoc_app = make_hoc_application();
     ui_set_state(ui_state_new());
 
-    default_fonts[FONT_DEFAULT] = load_font_face(str8_lit("fonts/DejaVuSansMono.ttf"), 12);
-    default_fonts[FONT_CODE] = load_font_face(str8_lit("fonts/DejaVuSansMono.ttf"), 12);
+    default_fonts[FONT_DEFAULT] = load_font_face(str8_lit("fonts/Consolas.ttf"), 14);
+    default_fonts[FONT_CODE] = load_font_face(str8_lit("fonts/DejaVuSansMono.ttf"), 14);
 
     key_map_arena = make_arena(get_malloc_allocator());
     default_key_map = load_key_map(key_map_arena, str8_lit("data/bindings.hoc"));
@@ -428,7 +402,7 @@ int main(int argc, char **argv) {
     def_editor_view->key_map = default_key_map;
     Hoc_Editor *def_editor = def_editor_view->editor.editor;
     def_editor->buffer = make_buffer(file_name);
-    def_editor->face = default_fonts[FONT_CODE];
+    def_editor->face = default_fonts[FONT_DEFAULT];
     
     f32 dt = 0.0f;
     srand((s32)get_wall_clock());

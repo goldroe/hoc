@@ -30,6 +30,7 @@ internal void write_buffer(Hoc_Buffer *buffer) {
     if (os_valid_handle(file_handle)) {
         os_write_file(file_handle, buffer_string.data, buffer_string.count);
         os_close_handle(file_handle);
+        buffer->edited = false;
     } else {
         printf("Could not open file '%s'\n", buffer->file_name.data);
     }
@@ -377,8 +378,8 @@ HOC_COMMAND(goto_last_line) {
     editor_set_cursor(editor, get_cursor_from_position(editor->buffer, buffer_get_length(editor->buffer)));
 }
 
-internal void gui_file_system_load_files(GUI_File_System *fs);
 internal GUI_View *make_gui_file_system();
+internal void gui_file_system_load_path(GUI_File_System *fs, String8 full_path);
 
 HOC_COMMAND(find_file) {
     GUI_Editor *gui_editor = &view->editor;
@@ -389,7 +390,5 @@ HOC_COMMAND(find_file) {
 
     //@Note Initializes current path and sub-files
     String8 current_path = editor->buffer->file_path;
-    MemoryCopy(fs->path_buffer, current_path.data, current_path.count);
-    fs->path_pos = fs->path_len = current_path.count;
-    gui_file_system_load_files(fs);
+    gui_file_system_load_path(fs, current_path);
 }

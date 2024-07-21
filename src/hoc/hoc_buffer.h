@@ -26,16 +26,20 @@ struct Hoc_Buffer {
     Buffer_ID id;
     Hoc_Buffer *prev;
     Hoc_Buffer *next;
+    
     String8 file_path;
     String8 file_name;
+
+    //@Note Gap Buffer info
     u8 *text;
     s64 gap_start;
     s64 gap_end;
     s64 end;
 
+    bool edited;
+
     Line_Ending line_ending;
     Auto_Array<s64> line_starts;
-    // Self_Insert_Hook post_self_insert_hook;
 };
 
 internal Hoc_Buffer *make_buffer(String8 file_name);

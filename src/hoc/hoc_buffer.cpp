@@ -128,7 +128,7 @@ internal Line_Ending detect_line_ending(String8 string) {
 internal void buffer_init_contents(Hoc_Buffer *buffer, String8 file_name, String8 string) {
     Base_Allocator *base_allocator = get_malloc_allocator();
     buffer->file_path = path_strip_dir_name(arena_alloc(base_allocator, file_name.count + 1), file_name);
-    buffer->file_name = str8_copy(arena_alloc(base_allocator, file_name.count + 1), file_name);
+    buffer->file_name = path_strip_file_name(arena_alloc(base_allocator, file_name.count + 1), file_name);
     buffer->text = string.data;
     buffer->gap_start = 0;
     buffer->gap_end = 0;
@@ -276,6 +276,8 @@ internal void buffer_delete_region(Hoc_Buffer *buffer, s64 start, s64 end) {
     }
     buffer->gap_end += (end - start);
     buffer_update_line_starts(buffer);
+
+    buffer->edited = true;
 }
 
 internal void buffer_delete_single(Hoc_Buffer *buffer, s64 position) {
@@ -302,6 +304,8 @@ internal void buffer_insert_string(Hoc_Buffer *buffer, s64 position, String8 str
     MemoryCopy(buffer->text + position, string.data, string.count);
     buffer->gap_start += string.count;
     buffer_update_line_starts(buffer);
+
+    buffer->edited = true;
 }
 
 internal void buffer_replace_region(Hoc_Buffer *buffer, String8 string, s64 start, s64 end) {
@@ -313,6 +317,8 @@ internal void buffer_replace_region(Hoc_Buffer *buffer, String8 string, s64 star
     memcpy(buffer->text + buffer->gap_start, string.data, string.count);
     buffer->gap_start += string.count;
     buffer_update_line_starts(buffer);
+
+    buffer->edited = true;
 }
 
 internal void buffer_clear(Hoc_Buffer *buffer) {
