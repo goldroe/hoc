@@ -27,6 +27,7 @@ Vertex_Out vs_main(Vertex_In input) {
 
 float4 ps_main(Vertex_Out input) : SV_TARGET {
     float4 tex_color = tex.Sample(tex_sampler, input.tex);
-    float4 color = input.color * tex_color;
+    float4 color = input.color;
+    color.a *= tex_color.a;
     return color;
 }
