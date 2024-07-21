@@ -15,7 +15,7 @@ internal UI_Signal ui_labelf(const char *fmt, ...) {
 }
 
 internal UI_Signal ui_button(String8 string) {
-    UI_Box *box = ui_make_box_from_string(UI_BOX_CLICKABLE | UI_BOX_HOVERABLE | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_BORDER | UI_BOX_DRAW_TEXT, string);
+    UI_Box *box = ui_make_box_from_string(UI_BOX_CLICKABLE | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_BORDER | UI_BOX_DRAW_TEXT | UI_BOX_DRAW_HOT_EFFECTS | UI_BOX_DRAW_ACTIVE_EFFECTS, string);
     return ui_signal_from_box(box);
 }
 
@@ -34,32 +34,29 @@ struct UI_Line_Edit_Draw_Data {
 
 internal UI_BOX_CUSTOM_DRAW_PROC(ui_draw_line_edit) {
     UI_Line_Edit_Draw_Data *draw_data = (UI_Line_Edit_Draw_Data *)user_data;
+    String8 edit_string = draw_data->edit_string;
+    box->string = edit_string;
+    v2 text_position = ui_text_position(box);
+    text_position += box->view_offset;
+    draw_string(edit_string, box->font_face, box->text_color, text_position);
 
-    // Draw_Clip(box->rect) {
-        draw_rect(box->rect, box->background_color);
-
-        v2 text_position = ui_get_text_position(box);
-        text_position += box->view_offset;
-        draw_string(draw_data->edit_string, box->font_face, box->text_color, text_position);
-
-        String8 string_before_cursor = draw_data->edit_string;
-        string_before_cursor.count = (u64)draw_data->cursor;
-        v2 c_pos = text_position + measure_string_size(string_before_cursor, box->font_face);
-        Rect c_rect = make_rect(c_pos.x, c_pos.y, 2.f, box->font_face->glyph_height);
-        if (box->key == ui_focus_active_id()) {
-            draw_rect(c_rect, box->text_color);
-        }
-    // }
+    String8 string_before_cursor = edit_string;
+    string_before_cursor.count = (u64)draw_data->cursor;
+    v2 c_pos = text_position + measure_string_size(string_before_cursor, box->font_face);
+    Rect c_rect = make_rect(c_pos.x, c_pos.y, 2.f, box->font_face->glyph_height);
+    if (ui_key_match(box->key, ui_state->focus_active_box_key)) {
+        draw_rect(c_rect, box->text_color);
+    }
 }
 
 internal UI_Signal ui_line_edit(String8 name, void *buffer, u64 max_buffer_capacity, u64 *buffer_pos,  u64 *buffer_count) {
-    UI_Box *box = ui_make_box_from_string(UI_BOX_CLICKABLE | UI_BOX_HOVERABLE | UI_BOX_KEYBOARD_INPUT |
-         UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, name);
+    UI_Box *box = ui_make_box_from_string(UI_BOX_CLICKABLE | UI_BOX_KEYBOARD_CLICKABLE |
+         UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_BORDER | UI_BOX_DRAW_HOT_EFFECTS | UI_BOX_DRAW_ACTIVE_EFFECTS, name);
     UI_Signal signal = ui_signal_from_box(box);
 
     u64 pos = *buffer_pos;
     u64 count = *buffer_count;
-    if (ui_focus_active_id() == box->key) {
+    if (ui_key_match(box->key, ui_state->focus_active_box_key)) {
         for (UI_Event *event = ui_state->events.first, *next = nullptr; event; event = next) {
             next = event->next;
             switch (event->type) {
@@ -209,16 +206,16 @@ internal UI_Signal ui_directory_list(String8 directory) {
     UI_Signal signal = ui_button(directory);
     UI_Parent(signal.box)
     UI_PrefWidth(ui_pct(1.0f, 1.0f)) UI_PrefHeight(ui_text_dim(0.0f, 1.0f)) {
-        Find_File_Data file_data{};
-        OS_Handle find_handle = find_first_file(ui_build_arena(), directory, &file_data);
+        OS_File file;
+        OS_Handle find_handle = os_find_first_file(ui_build_arena(), directory, &file);
         if (find_handle) {
             do {
-                UI_Signal file_signal = ui_label(file_data.file_name);
+                UI_Signal file_signal = ui_label(file.file_name);
                 if (ui_clicked(file_signal)) {
-                    printf("%s\n", file_data.file_name.data);
+                    printf("%s\n", file.file_name.data);
                 }
-            } while (find_next_file(ui_build_arena(), find_handle, &file_data));
-            find_close(find_handle);
+            } while (os_find_next_file(ui_build_arena(), find_handle, &file));
+            os_find_close(find_handle);
         }
     }
     return signal;

@@ -1,11 +1,15 @@
 global UI_State *ui_state;
 
-internal UI_Box *ui_get_root() {
+internal UI_Box *ui_root() {
     return ui_state->root;
 }
 
 internal f32 ui_animation_dt() {
     return ui_state->animation_dt;
+}
+
+internal bool ui_key_match(UI_Key a, UI_Key b) {
+    return a == b;
 }
 
 internal void ui_set_state(UI_State *state) {
@@ -115,28 +119,12 @@ internal void ui_box_set_string(UI_Box *box, String8 string) {
     String8 display_string = string;
     u64 hash_start = str8_find_substr(string, str8_lit("###"));
     if (hash_start < string.count) {
-        display_string.count -= hash_start;
+        display_string.count = hash_start;
     }
     box->string = str8_copy(ui_build_arena(), display_string);
 }
 
 //@Note Active setters/getters
-internal void ui_set_focus_active(UI_Key key) {
-    ui_state->focus_active_id = key;
-}
-
-internal UI_Key ui_focus_active_id() {
-    return ui_state->focus_active_id;
-}
-
-internal void ui_set_active(UI_Key key) {
-    ui_state->active_id = key;
-}
-
-internal UI_Key ui_active_id() {
-    return ui_state->active_id;
-}
-
 internal UI_Size ui_size(UI_Size_Type type, f32 value, f32 strictness) {
     UI_Size size = { type, value, strictness };
     return size;
@@ -230,26 +218,27 @@ internal UI_Box *ui_make_box(UI_Key key, UI_Box_Flags flags) {
         box->pref_size[AXIS_Y] = ui_state->pref_height_stack.top();
     }
 
-    if (!ui_state->text_alignment_stack.is_empty()) {
-        box->text_alignment = ui_state->text_alignment_stack.top();
-    }
-    if (!ui_state->child_layout_axis_stack.is_empty()) {
-        box->child_layout_axis = ui_state->child_layout_axis_stack.top();
-    }
+    box->text_alignment = ui_state->text_alignment_stack.top();
+    box->child_layout_axis = ui_state->child_layout_axis_stack.top();
+    box->background_color = ui_state->background_color_stack.top();
+    box->border_color = ui_state->border_color_stack.top();
+    box->text_color = ui_state->text_color_stack.top();
 
-    if (box->flags & UI_BOX_DRAW_BACKGROUND) {
-        box->background_color = ui_state->background_color_stack.top();
-    }
-    if (box->flags & UI_BOX_DRAW_BORDER) {
-        box->border_color = ui_state->border_color_stack.top();
-    }
-    if (box->flags & UI_BOX_DRAW_TEXT) {
-        box->text_color = ui_state->text_color_stack.top();
-    }
+    f32 animation_dt = ui_state->animation_dt;
 
-    f32 fast_rate = 10.f * ui_state->animation_dt;
+    f32 fast_rate = 10.f * animation_dt;
+    f32 hot_rate =  fast_rate;
+    f32 active_rate =  fast_rate;
     box->view_offset.x += fast_rate * (box->view_offset_target.x - box->view_offset.x);
     box->view_offset.y += fast_rate * (box->view_offset_target.y - box->view_offset.y);
+
+    bool is_hot = ui_state->hot_box_key == box->key;
+    bool is_active = ui_state->active_box_key == box->key;
+    bool is_focus_active = ui_state->focus_active_box_key == box->key;
+
+    box->hot_t          += hot_rate    * ((f32)is_hot - box->hot_t);
+    box->active_t       += active_rate * ((f32)is_active - box->active_t);
+    box->focus_active_t += active_rate * ((f32)is_focus_active - box->focus_active_t);
     
     //@Note Auto pop UI stacks
     {
@@ -366,9 +355,9 @@ internal UI_Signal ui_signal_from_box(UI_Box *box) {
             if (event_in_bounds && !do_later) {
                 signal.flags |= UI_SIGNAL_CLICKED;
                 // signal.pos = event->pos;
-                ui_set_active(box->key);
-                if (box->flags & UI_BOX_KEYBOARD_INPUT) {
-                    ui_set_focus_active(box->key);
+                ui_state->active_box_key = box->key;
+                if (box->flags & UI_BOX_KEYBOARD_CLICKABLE) {
+                    ui_state->focus_active_box_key = box->key;
                 }
                 taken = true;
             }
@@ -415,8 +404,10 @@ internal UI_Signal ui_signal_from_box(UI_Box *box) {
         }
     }
 
-    if (event_in_bounds) {
-        signal.flags |= UI_SIGNAL_HOVER;
+    if (box->flags & UI_BOX_CLICKABLE && event_in_bounds && !do_later) {
+        // printf("%llu\n", box->key);
+        // signal.flags |= UI_SIGNAL_HOVER;
+        ui_state->hot_box_key = box->key;
     }
 
     return signal;
@@ -583,21 +574,21 @@ internal void ui_layout_apply(UI_Box *root) {
     }
 }
 
-internal v2 ui_get_text_position(UI_Box *box) {
+internal v2 ui_text_position(UI_Box *box) {
     // v2 text_position = V2(0.f, box->rect.y0 + .25f * rect_height(box->rect));
     v2 text_position = V2(0.f, box->rect.y0);
     switch (box->text_alignment) {
     case UI_TEXT_ALIGN_CENTER:
         text_position.x = box->rect.x0 + 0.5f * rect_width(box->rect);
         text_position.x -= 0.5f * get_string_width(box->string, box->font_face);
-        text_position.x = Max(text_position.x, box->rect.x0);
+        text_position.x = ClampBot(text_position.x, box->rect.x0);
         break;
     case UI_TEXT_ALIGN_LEFT:
         text_position.x = box->rect.x0;
         break;
     case UI_TEXT_ALIGN_RIGHT:
         text_position.x = box->rect.x1 - get_string_width(box->string, box->font_face);
-        text_position.x = Max(text_position.x, box->rect.x0);
+        text_position.x = ClampBot(text_position.x, box->rect.x0);
         break;
     }
     return text_position;
@@ -645,7 +636,12 @@ internal void ui_begin_build(f32 animation_dt, OS_Handle window_handle, OS_Event
     }
 
     ui_push_font_face(default_fonts[FONT_DEFAULT]);
-
+    ui_push_text_alignment(UI_TEXT_ALIGN_CENTER);
+    ui_push_child_layout_axis(AXIS_Y);
+    ui_push_background_color(V4(1.f, 1.f, 1.f, 1.f));
+    ui_push_text_color(V4(.16f, .16f, .16f, 1.f));
+    ui_push_border_color(V4(.2f, .2f, .2f, 1.f));
+    
     ui_state->mouse_captured = false;
     ui_state->keyboard_captured = false;
     ui_state->build_counter = 0;

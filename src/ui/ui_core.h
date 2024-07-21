@@ -49,8 +49,7 @@ enum UI_Text_Align {
 enum UI_Box_Flags {
     UI_BOX_NIL                 = 0,
     UI_BOX_CLICKABLE           = (1<<0),
-    UI_BOX_HOVERABLE           = (1<<1),
-    UI_BOX_KEYBOARD_INPUT      = (1<<2),
+    UI_BOX_KEYBOARD_CLICKABLE  = (1<<1),
 
     UI_BOX_FLOATING_X          = (1<<8),
     UI_BOX_FLOATING_Y          = (1<<9),
@@ -88,7 +87,7 @@ struct UI_Box {
 
     v2 fixed_position = V2(); // computed relative to parent
     v2 fixed_size = V2(); // computed on requested size
-    Rect rect; // final box rectangle
+    Rect rect;
     UI_Size pref_size[AXIS_COUNT];
     Axis2 child_layout_axis = AXIS_Y;
     UI_Text_Align text_alignment = UI_TEXT_ALIGN_CENTER;
@@ -98,15 +97,15 @@ struct UI_Box {
     v4 text_color = V4();
     v4 border_color = V4();
     String8 string = str8_zero();
+    UI_Box_Draw_Proc *custom_draw_proc;
+    void *draw_data;
 
     //@Note Persistent data
-    f32 hot_t = 0.f;
-    f32 active_t = 0.f;
     v2 view_offset;
     v2 view_offset_target;
-
-    void *draw_data;
-    UI_Box_Draw_Proc *custom_draw_proc;
+    f32 hot_t = 0.f;
+    f32 active_t = 0.f;
+    f32 focus_active_t = 0.f;
 };
 
 enum UI_Event_Type {
@@ -151,8 +150,9 @@ struct UI_State {
     Auto_Array<UI_Box> last_build_collection;
     UI_Box *root = nullptr;
 
-    UI_Key focus_active_id = 0;
-    UI_Key active_id = 0;
+    UI_Key focus_active_box_key = 0;
+    UI_Key active_box_key = 0;
+    UI_Key hot_box_key = 0;
 
     v2 mouse_position;
     bool mouse_captured = false;
@@ -263,11 +263,9 @@ internal UI_Signal ui_signal_from_box(UI_Box *box);
 internal v2 ui_get_mouse();
 internal bool ui_mouse_over_box(UI_Box *box);
 
-internal void ui_set_active(UI_Key key);
-internal UI_Key ui_active_id();
-internal UI_Box *ui_get_root();
+internal UI_Box *ui_root();
 
-internal v2 ui_get_text_position(UI_Box *box);
+internal v2 ui_text_position(UI_Box *box);
 
 internal UI_Size ui_size(UI_Size_Type type, f32 value, f32 strictness);
 #define ui_px(value, strictness)  (ui_size(UI_SIZE_PIXELS, value, strictness))
