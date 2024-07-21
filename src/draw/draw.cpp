@@ -5,7 +5,7 @@ global Draw_Bucket *draw_bucket;
 
 internal void draw_begin(OS_Handle window_handle) {
     if (draw_arena == nullptr) {
-        draw_arena = arena_alloc(get_malloc_allocator(), MB(16));
+        draw_arena = arena_alloc(get_malloc_allocator(), MB(40));
     }
 
     draw_bucket = push_array(draw_arena, Draw_Bucket, 1);
@@ -37,12 +37,7 @@ internal void draw_batch_push_vertex(R_Batch *batch, R_2D_Vertex src) {
  }
 
 internal void draw_push_batch_node(R_Batch_List *list, R_Batch_Node *node) {
-    if (list->first) {
-        list->last->next = node;
-    } else {
-        list->first = node;
-    }
-    list->last = node;
+    SLLQueuePush(list->first, list->last, node);
     list->count += 1;
 }
 
@@ -127,4 +122,42 @@ internal void draw_rect_outline(Rect rect, v4 color) {
     draw_rect(make_rect(rect.x0, rect.y0, 1, rect_height(rect)), color);
     draw_rect(make_rect(rect.x1 - 1, rect.y0, 1, rect_height(rect)), color);
     draw_rect(make_rect(rect.x0, rect.y1 - 1, rect_width(rect), 1), color);
+}
+
+internal void draw_ui_box(UI_Box *box) {
+    if (box->flags & UI_BOX_DRAW_BACKGROUND) {
+        draw_rect(box->rect, box->background_color);
+    }
+    if (box->flags & UI_BOX_DRAW_BORDER) {
+        draw_rect_outline(box->rect, box->border_color);
+    }
+    if (box->flags & UI_BOX_DRAW_HOT_EFFECTS) {
+        v4 hot_color = V4(1.f, 1.f, 1.f, .1f);
+        hot_color.w *= box->hot_t;
+        draw_rect(box->rect, hot_color);
+    }
+    // if (box->flags & UI_BOX_DRAW_ACTIVE_EFFECTS) {
+    //     v4 active_color = V4(1.f, 1.f, 1.f, 1.f);
+    //     active_color.w *= box->hot_t;
+    //     draw_rect(box->rect, active_color);
+    // }
+    if (box->flags & UI_BOX_DRAW_TEXT) {
+        v2 text_position = ui_text_position(box);
+        text_position += box->view_offset;
+        draw_string(box->string, box->font_face, box->text_color, text_position);
+    }
+
+    if (box->custom_draw_proc) {
+        box->custom_draw_proc(box, box->draw_data);
+    }
+}
+
+internal void draw_ui_layout(UI_Box *box) {
+    if (box != ui_root()) {
+        draw_ui_box(box);
+    }
+
+    for (UI_Box *child = box->first; child != nullptr; child = child->next) {
+        draw_ui_layout(child);
+    }
 }
