@@ -168,3 +168,75 @@ internal void os_local_time(int *hour, int *minute, int *second) {
     if (minute) *minute = system_time.wMinute; 
     if (second) *second = system_time.wSecond; 
 }
+
+internal OS_File os_file_from_win32_data(Arena *arena, WIN32_FIND_DATAA win32_data) {
+    OS_File file{};
+    file.file_name = str8_copy(arena, str8_cstring(win32_data.cFileName));
+    file.file_size = ((u64)win32_data.nFileSizeHigh<<32) | win32_data.nFileSizeLow;
+    OS_File_Flags flags = OS_FILE_NIL;
+    DWORD attribs = win32_data.dwFileAttributes;
+    if (attribs & FILE_ATTRIBUTE_READONLY)    flags |= OS_FILE_READONLY;
+    if (attribs & FILE_ATTRIBUTE_HIDDEN)      flags |= OS_FILE_HIDDEN;
+    if (attribs & FILE_ATTRIBUTE_SYSTEM)      flags |= OS_FILE_SYSTEM;
+    if (attribs & FILE_ATTRIBUTE_DIRECTORY)   flags |= OS_FILE_DIRECTORY;
+    if (attribs & FILE_ATTRIBUTE_NORMAL)      flags |= OS_FILE_NORMAL;
+    file.flags = flags;
+    return file;
+}
+
+internal OS_Handle os_find_first_file(Arena *arena, String8 path, OS_File *file) {
+    String8 find_path = str8_concat(arena, path, str8_lit("\\*"));
+    WIN32_FIND_DATAA win32_data;
+    HANDLE find_file_handle = FindFirstFileA((const char *)find_path.data, &win32_data);
+    if (find_file_handle) {
+        *file = os_file_from_win32_data(arena, win32_data);
+    } else {
+        DWORD err = GetLastError();
+        printf("find_first_file ERROR '%d'\n", err);
+    }
+    return (OS_Handle)find_file_handle;
+}
+
+internal bool os_find_next_file(Arena *arena, OS_Handle find_file_handle, OS_File *file) {
+    if ((HANDLE)find_file_handle == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    WIN32_FIND_DATAA win32_data;
+    if (FindNextFileA((HANDLE)find_file_handle, &win32_data)) {
+        *file = os_file_from_win32_data(arena, win32_data);
+        return true;
+    } else {
+        DWORD err = GetLastError();
+        if (err != ERROR_NO_MORE_FILES) {
+            printf("find_next_file ERROR '%d'\n", err);
+        }
+        return false;
+    }
+}
+
+internal void os_find_close(OS_Handle find_file_handle) {
+    FindClose((HANDLE)find_file_handle);
+}
+
+internal bool os_path_exists(String8 path) {
+    return PathFileExistsA((char *)path.data);
+}
+
+internal String8 os_home_path(Arena *arena) {
+    char buffer[MAX_PATH];
+    GetEnvironmentVariableA("USERPROFILE", buffer, MAX_PATH);
+    String8 result = str8_copy(arena, str8_cstring(buffer));
+    return result;
+}
+
+internal String8 os_current_dir(Arena *arena) {
+    DWORD length = GetCurrentDirectoryA(0, NULL);
+    u8 *buffer = (u8 *)arena_push(arena, length + 2);
+    DWORD ret = GetCurrentDirectoryA(length, (LPSTR)buffer);
+    for (DWORD i = 0; i < length; i++) {
+        if (buffer[i] == '\\') buffer[i] = '/';
+    }
+    buffer[ret] = '/';
+    String8 result = str8(buffer, (u64)ret + 1);
+    return result;
+}

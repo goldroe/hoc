@@ -146,19 +146,32 @@ struct OS_Event_List {
     int count;
 };
 
-struct File_Attributes {
+enum OS_File_Flags {
+    OS_FILE_NIL          = 0,
+    OS_FILE_READONLY     = (1<<0),
+    OS_FILE_HIDDEN       = (1<<1),
+    OS_FILE_SYSTEM       = (1<<2),
+    OS_FILE_DIRECTORY    = (1<<3),
+    OS_FILE_NORMAL       = (1<<4),
+};
+EnumDefineFlagOperators(OS_File_Flags)
+
+struct OS_File {
+    OS_File_Flags flags;
+    String8 file_name;
+    u64 file_size;
     u64 creation_time;
     u64 last_access_time;
     u64 last_write_time;
-    u64 file_size;
-};
-
-struct Find_File_Data {
-    String8 file_name;
-    File_Attributes attributes;
 };
 
 internal v2 os_get_window_dim(OS_Handle window_handle);
 internal void os_quit_application(int exit_code);
+
+internal OS_Handle os_find_first_file(Arena *arena, String8 path, OS_File *file);
+internal bool os_find_next_file(Arena *arena, OS_Handle find_file_handle, OS_File *file);
+internal void os_find_close(OS_Handle find_file_handle);
+
+
 
 #endif // OS_CORE_H
