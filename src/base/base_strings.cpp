@@ -24,6 +24,13 @@ internal String8 str8_cstring(const char *c) {
     return result;
 }
 
+internal String8 str8_rng(String8 string, Rng_U64 rng) {
+    String8 result;
+    result.data = string.data + rng.min;
+    result.count = rng.max - rng.min;
+    return result;
+}
+
 internal String8 str8_copy(Arena *arena, String8 string) {
     String8 result;
     result.count = string.count;
