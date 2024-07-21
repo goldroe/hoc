@@ -20,8 +20,11 @@ struct GUI_File_System {
     u8  path_buffer[2048];
     u64 path_len;
     u64 path_pos;
-    String8 sub_file_paths[2048];
-    int sub_file_count;
+    
+    // String8 normalized_path;
+    Arena *cached_files_arena;
+    OS_File *cached_files;
+    int cached_file_count;
 };
 
 struct GUI_View {
