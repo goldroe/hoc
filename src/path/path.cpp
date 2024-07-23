@@ -37,7 +37,7 @@ internal String8 path_strip_extension(Arena *arena, String8 path) {
 
 internal String8 path_strip_dir_name(Arena *arena, String8 path) {
     Assert(path.data);
-    u64 end = path.count;
+    u64 end = path.count - 1;
     while (end) {
         if (is_separator(path.data[end - 1])) break;
         end--;
