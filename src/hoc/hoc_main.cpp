@@ -226,6 +226,11 @@ internal LRESULT CALLBACK window_proc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM
         int y = GET_Y_LPARAM(lParam); 
         event->pos.x = x;
         event->pos.y = y;
+        if (release) {
+            ReleaseCapture();
+        } else {
+            SetCapture(hWnd);
+        }
         break;
     }
 
@@ -334,6 +339,9 @@ internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handl
 }
 
 int main(int argc, char **argv) {
+    int target_frames_per_second = 60;
+    int target_ms_per_frame = (int)(1000.f / (f32)target_frames_per_second);
+    
     argc--; argv++;
     Arena *arg_arena = make_arena(get_malloc_allocator());
     int argument_count = argc;
@@ -389,7 +397,7 @@ int main(int argc, char **argv) {
     hoc_app = make_hoc_application();
     ui_set_state(ui_state_new());
 
-    default_fonts[FONT_DEFAULT] = load_font_face(str8_lit("fonts/Consolas.ttf"), 14);
+    default_fonts[FONT_DEFAULT] = load_font_face(str8_lit("fonts/DejaVuSansMono.ttf"), 14);
     default_fonts[FONT_CODE] = load_font_face(str8_lit("fonts/DejaVuSansMono.ttf"), 14);
 
     key_map_arena = make_arena(get_malloc_allocator());
@@ -431,30 +439,11 @@ int main(int argc, char **argv) {
         Rect draw_region = make_rect(0.f, 0.f, window_dim.x, window_dim.y);
         r_d3d11_state->draw_region = draw_region;
 
-        D3D11_VIEWPORT viewport{};
-        viewport.TopLeftX = draw_region.x0;
-        viewport.TopLeftY = draw_region.y0;
-        viewport.Width = rect_width(draw_region);
-        viewport.Height = rect_height(draw_region);
-        viewport.MinDepth = 0.0f;
-        viewport.MaxDepth = 1.0f;
-        r_d3d11_state->device_context->RSSetState(r_d3d11_state->rasterizer_state);
-        r_d3d11_state->device_context->RSSetViewports(1, &viewport);
-
-        float clear_color[4] = {0, 0, 0, 1};
-        r_d3d11_state->device_context->ClearRenderTargetView(r_d3d11_state->render_target_view, clear_color);
-        r_d3d11_state->device_context->ClearDepthStencilView(r_d3d11_state->depth_stencil_view, D3D11_CLEAR_DEPTH, 0.0f, 0);
-
-        r_d3d11_state->device_context->OMSetDepthStencilState(r_d3d11_state->depth_stencil_state, 0);
-        r_d3d11_state->device_context->OMSetRenderTargets(1, &r_d3d11_state->render_target_view, r_d3d11_state->depth_stencil_view);
-
         draw_begin(window_handle);
 
         update_and_render(&win32_events, window_handle, dt);
 
         d3d11_render(window_handle, draw_bucket);
-
-        r_d3d11_state->swap_chain->Present(1, 0);
 
         win32_events.first = nullptr;
         win32_events.last = nullptr;
@@ -462,6 +451,13 @@ int main(int argc, char **argv) {
         arena_clear(win32_event_arena);
 
         draw_end();
+
+        s64 work_clock = get_wall_clock();
+        int work_ms_elapsed = (int)(1000.0f * get_seconds_elapsed(last_clock, work_clock));
+        if (work_ms_elapsed < target_ms_per_frame) {
+            DWORD sleep_ms = target_ms_per_frame - work_ms_elapsed;
+            Sleep(sleep_ms);
+        }
 
         s64 end_clock = get_wall_clock();
         dt = get_seconds_elapsed(last_clock, end_clock);
