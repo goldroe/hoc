@@ -43,19 +43,8 @@ internal void ui_pop_event(UI_Event *event) {
     ui_state->events.count -= 1;
 }
 
-internal v2 ui_get_mouse() {
-    v2 result = ui_state->mouse_position;
-    return result;
-}
-
-internal bool ui_mouse_hover(UI_Box *box) {
-    v2 v = ui_get_mouse();
-    bool result = v.x >= box->rect.x0 &&
-        v.x <= box->rect.x1 &&
-        v.y >= box->rect.y0 &&
-        v.y <= box->rect.y1;
-    return result;
-}
+internal v2 ui_mouse() {return ui_state->mouse_position;}
+internal v2 ui_drag_delta() {return ui_mouse() - v2_v2i(ui_state->mouse_drag_start);}
 
 internal bool ui_key_press(OS_Key key) {
     bool result = false;
@@ -322,6 +311,18 @@ internal UI_Box *ui_make_box_from_stringf(UI_Box_Flags flags, char *fmt, ...) {
     return box;
 }
 
+internal bool ui_key_focus_active_box_match(UI_Key key) {
+    return ui_state->focus_active_box_key == key;
+}
+
+internal bool ui_key_active_box_match(UI_Key key) {
+    return ui_state->active_box_key == key;
+}
+
+internal bool ui_key_hot_box_match(UI_Key key) {
+    return ui_state->hot_box_key == key;
+}
+
 internal UI_Signal ui_signal_from_box(UI_Box *box) {
     UI_Signal signal{};
     signal.box = box;
@@ -333,12 +334,12 @@ internal UI_Signal ui_signal_from_box(UI_Box *box) {
         return signal;
     }
 
-    bool event_in_bounds = ui_mouse_hover(box);
+    bool event_in_bounds = rect_contains(box->rect, ui_mouse());
 
     bool do_later = false;
     for (int i = 0; i < ui_state->last_build_collection.count; i++) {
         UI_Box *collect_box = &ui_state->last_build_collection.data[i];
-        if (collect_box->box_id > box->box_id && ui_mouse_hover(collect_box)) {
+        if (collect_box->box_id > box->box_id && rect_contains(collect_box->rect, ui_mouse())) {
             do_later = true;
             break;
         }
@@ -349,54 +350,57 @@ internal UI_Signal ui_signal_from_box(UI_Box *box) {
         next = event->next;
         bool taken = false;
 
-        switch (event->type) {
-        case UI_EVENT_MOUSE_PRESS:
-        {
-            if (event_in_bounds && !do_later) {
-                signal.flags |= UI_SIGNAL_CLICKED;
-                // signal.pos = event->pos;
-                ui_state->active_box_key = box->key;
-                if (box->flags & UI_BOX_KEYBOARD_CLICKABLE) {
-                    ui_state->focus_active_box_key = box->key;
-                }
-                taken = true;
-            }
-            break;
+        if (event->type == UI_EVENT_MOUSE_RELEASE) {
+            ui_state->mouse_dragging = false;
         }
-        case UI_EVENT_MOUSE_RELEASE:
-        {
-            if (event_in_bounds && !do_later) {
-                // ui_set_active(0);
+
+        if (box->flags & UI_BOX_CLICKABLE &&
+            event->type == UI_EVENT_MOUSE_PRESS &&
+            event_in_bounds && !do_later) {
+            signal.flags |= UI_SIGNAL_CLICKED;
+            ui_state->active_box_key = box->key;
+            ui_state->focus_active_box_key = box->key;
+
+            ui_state->mouse_dragging = true;
+            ui_state->mouse_drag_start = event->pos;
+            taken = true;
+        }
+
+        if (box->flags & UI_BOX_CLICKABLE
+            && event->type == UI_EVENT_MOUSE_RELEASE &&
+            ui_key_active_box_match(box->key) && !do_later) {
+            if (event_in_bounds) {
                 signal.flags |= UI_SIGNAL_RELEASED;
             }
-            break; 
+            ui_state->active_box_key = 0;
         }
-        case UI_EVENT_SCROLL:
-        {
-            if (event_in_bounds && !do_later) {
-                taken = true;
-                signal.scroll = event->delta;
-                signal.flags |= UI_SIGNAL_SCROLL;
-            }
-            break;
+
+        if (box->flags & UI_BOX_SCROLL &&
+            event->type == UI_EVENT_SCROLL &&
+            event_in_bounds && !do_later) {
+            signal.flags |= UI_SIGNAL_SCROLL;
+            signal.scroll.x = event->delta.x;
+            signal.scroll.y = event->delta.y;
+            taken = true;
         }
-        case UI_EVENT_PRESS:
-        {
+
+        if (box->flags & UI_BOX_KEYBOARD_CLICKABLE &&
+            event->type == UI_EVENT_PRESS &&
+            ui_key_focus_active_box_match(box->key)) {
             signal.flags |= UI_SIGNAL_PRESSED;
             signal.key = event->key;
-            // signal.key_modifiers = event->key_modifiers;
-            break;
         }
-        case UI_EVENT_RELEASE:
-        {
+
+        if (box->flags & UI_BOX_CLICKABLE &&
+            event->type == UI_EVENT_RELEASE &&
+            ui_key_active_box_match(box->key)) {
             signal.flags |= UI_SIGNAL_RELEASED;
-            break; 
         }
-        case UI_EVENT_TEXT:
-        {
+
+        if (box->flags & UI_BOX_KEYBOARD_CLICKABLE &&
+            event->type == UI_EVENT_TEXT &&
+            ui_key_focus_active_box_match(box->key)) {
             signal.text = str8_concat(ui_build_arena(), signal.text, event->text);
-            break;
-        }
         }
 
         if (taken) {
@@ -404,10 +408,17 @@ internal UI_Signal ui_signal_from_box(UI_Box *box) {
         }
     }
 
-    if (box->flags & UI_BOX_CLICKABLE && event_in_bounds && !do_later) {
+    if (box->flags & UI_BOX_CLICKABLE &&
+        event_in_bounds && !do_later) {
         // printf("%llu\n", box->key);
-        // signal.flags |= UI_SIGNAL_HOVER;
+        signal.flags |= UI_SIGNAL_HOVER;
         ui_state->hot_box_key = box->key;
+    }
+
+    //@Note Mouse dragging
+    if (ui_state->mouse_dragging &&
+        ui_key_active_box_match(box->key)) {
+        signal.flags |= UI_SIGNAL_DRAGGING;
     }
 
     return signal;
@@ -642,8 +653,6 @@ internal void ui_begin_build(f32 animation_dt, OS_Handle window_handle, OS_Event
     ui_push_text_color(V4(.16f, .16f, .16f, 1.f));
     ui_push_border_color(V4(.2f, .2f, .2f, 1.f));
     
-    ui_state->mouse_captured = false;
-    ui_state->keyboard_captured = false;
     ui_state->build_counter = 0;
 
     UI_Box *root = ui_make_box_from_string(UI_BOX_NIL, str8_lit("~Root"));
@@ -693,6 +702,7 @@ internal void ui_end_build() {
     ui_state->background_color_stack.reset_count();
     ui_state->border_color_stack.reset_count();
     ui_state->text_color_stack.reset_count();
+
 }
 
 #define ui_stack_set_next(Stack, V) ui_state->Stack##_stack.push(V); \

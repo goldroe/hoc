@@ -50,7 +50,7 @@ enum UI_Box_Flags {
     UI_BOX_NIL                 = 0,
     UI_BOX_CLICKABLE           = (1<<0),
     UI_BOX_KEYBOARD_CLICKABLE  = (1<<1),
-
+    UI_BOX_SCROLL              = (1<<4),
     UI_BOX_FLOATING_X          = (1<<8),
     UI_BOX_FLOATING_Y          = (1<<9),
     UI_BOX_FIXED_WIDTH         = (1<<10),
@@ -155,8 +155,8 @@ struct UI_State {
     UI_Key hot_box_key = 0;
 
     v2 mouse_position;
-    bool mouse_captured = false;
-    bool keyboard_captured = false;
+    v2i mouse_drag_start;
+    b32 mouse_dragging;
 
     u64 box_table_size;
     UI_Hash_Bucket *box_table;
@@ -187,6 +187,7 @@ enum UI_Signal_Flags {
     UI_SIGNAL_RELEASED = (1<<2),
     UI_SIGNAL_HOVER    = (1<<3),
     UI_SIGNAL_SCROLL   = (1<<4),
+    UI_SIGNAL_DRAGGING = (1<<5),
 };
 EnumDefineFlagOperators(UI_Signal_Flags);
 
@@ -199,10 +200,13 @@ struct UI_Signal {
     v2i scroll;
 };
 
-#define ui_clicked(sig) ((sig).flags & UI_SIGNAL_CLICKED)
-#define ui_hover(sig)   ((sig).flags & UI_SIGNAL_PRESSED)
-#define ui_pressed(sig) ((sig).flags & UI_SIGNAL_PRESSED)
-#define ui_scroll(sig)  ((sig).flags & UI_SIGNAL_SCROLL)
+internal v2 ui_drag_delta();
+
+#define ui_clicked(sig)      ((sig).flags & UI_SIGNAL_CLICKED)
+#define ui_hover(sig)        ((sig).flags & UI_SIGNAL_PRESSED)
+#define ui_pressed(sig)      ((sig).flags & UI_SIGNAL_PRESSED)
+#define ui_scroll(sig)       ((sig).flags & UI_SIGNAL_SCROLL)
+#define ui_dragging(sig)     ((sig).flags & UI_SIGNAL_DRAGGING)
 
 internal bool point_in_rect(v2 v, Rect rect);
 
@@ -259,9 +263,6 @@ internal UI_Box *ui_make_box(UI_Key key, UI_Box_Flags flags);
 internal UI_Box *ui_make_box_from_string(UI_Box_Flags flags, String8 string);
 internal UI_Box *ui_box_from_key(UI_Key key);
 internal UI_Signal ui_signal_from_box(UI_Box *box);
-
-internal v2 ui_get_mouse();
-internal bool ui_mouse_over_box(UI_Box *box);
 
 internal UI_Box *ui_root();
 
