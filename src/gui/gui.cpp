@@ -53,8 +53,8 @@ internal Cursor editor_mouse_to_cursor(GUI_Editor *gui_editor, v2 mouse) {
     Hoc_Editor *editor = gui_editor->editor;
     //@Todo support non-mono fonts
     Cursor result{};
-    f32 y = mouse.y - gui_editor->box->view_offset.y;
-    f32 x = mouse.x - gui_editor->box->view_offset.x;
+    f32 y = mouse.y - gui_editor->box->view_offset.y - gui_editor->box->rect.y0;
+    f32 x = mouse.x - gui_editor->box->view_offset.x - gui_editor->box->rect.x0;
     s64 line = (s64)(y / gui_editor->box->font_face->glyph_height);
     s64 col = (s64)(x / gui_editor->box->font_face->glyph_width);
     if (line >= buffer_get_line_count(editor->buffer)) {
@@ -83,27 +83,91 @@ struct Editor_Draw_Data {
 
 internal UI_BOX_CUSTOM_DRAW_PROC(draw_gui_editor) {
     Editor_Draw_Data *draw_data = (Editor_Draw_Data *)user_data;
+    Hoc_Editor *editor = draw_data->editor;
     String8 string_before_cursor = box->string;
-    string_before_cursor.count = draw_data->editor->cursor.position;
+    string_before_cursor.count = editor->cursor.position;
+
+    Face *font = box->font_face;
 
     // Draw_Clip(box->rect) {
         draw_rect(box->rect, box->background_color);
-        
+
         v2 text_position = ui_text_position(box);
         text_position += box->view_offset;
-        draw_string(box->string, box->font_face, box->text_color, text_position);
 
-        v2 cursor_pos = box->rect.p0 + measure_string_size(string_before_cursor, box->font_face) + box->view_offset;
-        Rect cursor_rect = make_rect(cursor_pos.x, cursor_pos.y, 1.f, box->font_face->glyph_height);
+        //@Note draw selection
+        if (editor->mark_active) {
+            v2 p0 = box->rect.p0 + box->view_offset;
+
+            Cursor c0 = editor->cursor;
+            Cursor c1 = editor->mark;
+            if (c1.position < c0.position) {
+                Cursor t = c1;
+                c1 = c0;
+                c0 = t;
+            }
+
+            for (s64 line = c0.line; line <= c1.line; line += 1) {
+                s64 start = 0;
+                s64 end = buffer_get_line_length(editor->buffer, line);
+                if (line == c0.line) {
+                    start = c0.col;
+                }
+                if (line == c1.line) {
+                    end = c1.col;
+                }
+
+                v2 p = p0;
+                p.x += start * font->glyph_width;
+                p.y += line * font->glyph_height;
+
+                String8 line_string;
+                line_string = str8_jump(box->string, get_position_from_line(editor->buffer, line) + start);
+                line_string.count = end - start;
+
+
+                f32 width = get_string_width(line_string, font);
+                if (line_string.count == 0) width = font->glyph_width;
+                f32 height = font->glyph_height;
+                Rect rect = make_rect(p.x, p.y, width, height);
+                draw_rect(rect, V4(.13f, .26f, .51f, 1.f));
+            }
+        }
+        draw_string(box->string, font, box->text_color, text_position);
+
+        v2 cursor_pos = box->rect.p0 + measure_string_size(string_before_cursor, font) + box->view_offset;
+        Rect cursor_rect = make_rect(cursor_pos.x, cursor_pos.y, 1.f, font->glyph_height);
         v4 cursor_color = box->text_color;
-        // cursor_color *= (1.f - draw_data->editor->cursor_dt);
-        // draw_data->editor->cursor_dt += ui_animation_dt();
-        // draw_data->editor->cursor_dt = ClampBot(draw_data->editor->cursor_dt, 0.f);
+        // cursor_color *= (1.f - editor->cursor_dt);
+        // editor->cursor_dt += ui_animation_dt();
+        // editor->cursor_dt = ClampBot(editor->cursor_dt, 0.f);
         if (ui_key_match(box->key, ui_state->focus_active_box_key)) {
             cursor_rect.x1 += 1.f;
         }
         draw_rect(cursor_rect, cursor_color);
     // }
+}
+
+int fs_sort_compare__file_name(const void *arg1, const void *arg2) {
+    OS_File *a = (OS_File *)arg1;
+    OS_File *b = (OS_File *)arg2;
+    int size = (int)Min(a->file_name.count, b->file_name.count);
+    int result = strncmp((char *)a->file_name.data, (char *)b->file_name.data, size);
+    return result;
+}
+
+int fs_sort_compare__default(const void *arg1, const void *arg2) {
+    OS_File *a = (OS_File *)arg1;
+    OS_File *b = (OS_File *)arg2;
+    int result = 0;
+    if (a->flags & OS_FILE_DIRECTORY && !(b->flags & OS_FILE_DIRECTORY)) {
+        result = -1;
+    } else if (b->flags & OS_FILE_DIRECTORY && !(a->flags & OS_FILE_DIRECTORY)) {
+        result = 1;
+    } else {
+        result = fs_sort_compare__file_name(a, b);
+    }
+    return result;
 }
 
 internal void gui_file_system_load_path(GUI_File_System *fs, String8 full_path) {
@@ -127,6 +191,9 @@ internal void gui_file_system_load_path(GUI_File_System *fs, String8 full_path) 
     OS_Handle find_handle = os_find_first_file(fs->arena, find_path, &file);
     if (os_valid_handle(find_handle)) {
         do {
+            if (str8_match(file.file_name, str8_lit(".")) || str8_match(file.file_name, str8_lit(".."))) {
+                continue;
+            }
             OS_File_Node *file_node = push_array(scratch, OS_File_Node, 1);
             file_node->file = file;
             SLLQueuePush(first, last, file_node);
@@ -143,6 +210,8 @@ internal void gui_file_system_load_path(GUI_File_System *fs, String8 full_path) 
     }
     fs->cached_file_count = file_count;
 
+    qsort(fs->cached_files, fs->cached_file_count, sizeof(OS_File), fs_sort_compare__default);
+    
     arena_release(scratch);
 }
 
@@ -184,7 +253,7 @@ internal void gui_view_update(GUI_View *view) {
                 ui_set_next_pref_width(ui_pct(1.f, 0.f));
                 ui_set_next_pref_height(ui_pct(1.f, 0.f));
                 ui_set_next_font_face(editor->face);
-                code_body = ui_make_box_from_stringf(UI_BOX_CLICKABLE | UI_BOX_KEYBOARD_CLICKABLE | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, "code_view_%d", view->id);
+                code_body = ui_make_box_from_stringf(UI_BOX_CLICKABLE | UI_BOX_KEYBOARD_CLICKABLE | UI_BOX_SCROLL | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, "code_view_%d", view->id);
                 signal = ui_signal_from_box(code_body);
 
                 //@Note File bar
@@ -192,14 +261,15 @@ internal void gui_view_update(GUI_View *view) {
                 os_local_time(&hour, &minute, &second);
                 ui_set_next_pref_width(ui_pct(1.f, 1.f));
                 ui_set_next_pref_height(ui_text_dim(2.f, 1.f));
-                ui_set_next_background_color(V4(.4f, .36f, .33f, 1.f));
+                ui_set_next_background_color(V4(.24f, .25f, .25f, 1.f));
                 UI_Box *bottom_bar = ui_make_box_from_stringf(UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, "-\\**-  %s  (%lld,%lld) %d:%d###bottom_bar_%s", file_name, editor->cursor.line, editor->cursor.col, hour, minute, file_name);
             }
 
             ui_set_next_background_color(V4(.18f, .18f, .18f, 1.f));
-            UI_Signal signal = ui_scroll_bar(editor->buffer->file_name, gui_editor->scroll_pt, V2(0.f, buffer_get_line_count(editor->buffer) * editor->face->glyph_height));
+            f32 ratio = rect_height(code_body->rect) / (buffer_get_line_count(editor->buffer) * editor->face->glyph_height);
+            UI_Signal signal = ui_scroll_bar(editor->buffer->file_name, gui_editor->scroll_pt, V2(0.f, ratio));
             if (ui_clicked(signal)) {
-                gui_editor->scroll_pt = ui_get_mouse().y;
+                gui_editor->scroll_pt = ui_mouse().y;
             }
         }
 
@@ -208,21 +278,34 @@ internal void gui_view_update(GUI_View *view) {
         gui_editor->active_text_input = signal.text;
         gui_editor->box = code_body;
 
-        if (ui_key_match(code_body->key, ui_state->focus_active_box_key)) {
-            if (ui_pressed(signal)) {
-                u16 key = os_key_to_key_mapping(signal.key, signal.key_modifiers);
-                if (key && signal.key) {
-                    view->key_map->mappings[key].procedure(view);
-                }
+        if (ui_pressed(signal)) {
+            u16 key = os_key_to_key_mapping(signal.key, signal.key_modifiers);
+            if (key && signal.key) {
+                view->key_map->mappings[key].procedure(view);
             }
-            if (ui_clicked(signal)) {
-                Cursor cursor = editor_mouse_to_cursor(gui_editor, ui_state->mouse_position);
-                editor_set_cursor(editor, cursor);
-            }
+        }
+
+        if (ui_clicked(signal)) {
+            Cursor cursor = editor_mouse_to_cursor(gui_editor, ui_mouse());
+            editor_set_cursor(editor, cursor);
+            editor->mark = cursor;
         }
 
         if (ui_scroll(signal)) {
             gui_editor->scroll_pt -= editor->face->glyph_height * signal.scroll.y;
+        }
+
+        if (ui_dragging(signal)) {
+            v2 mouse = ui_mouse();
+            if (mouse.y <= code_body->rect.y0) {
+                gui_editor->scroll_pt -= editor->face->glyph_height;
+            }
+            if (mouse.y >= code_body->rect.y1) {
+                gui_editor->scroll_pt += editor->face->glyph_height;
+            }
+            Cursor cursor = editor_mouse_to_cursor(gui_editor, ui_mouse());
+            editor_set_cursor(editor, cursor);
+            editor->mark_active = editor->mark.position != editor->cursor.position;
         }
 
         code_body->string = buffer_to_string(ui_build_arena(), editor->buffer); 
@@ -263,7 +346,6 @@ internal void gui_view_update(GUI_View *view) {
             UI_PrefHeight(ui_text_dim(2.f, 0.f))
         {
             UI_Signal prompt_sig = ui_line_edit(str8_lit("fs_prompt_1"), fs->path_buffer, 2048, &fs->path_pos, &fs->path_len);
-
             String8 file_path = str8(fs->path_buffer, fs->path_len);
             
             if (ui_pressed(prompt_sig)) {
@@ -286,10 +368,21 @@ internal void gui_view_update(GUI_View *view) {
             if (prompt_sig.key == OS_KEY_ESCAPE) {
                 destroy_gui_view(view);
             }
-        
+
+            UI_Signal back_sig = ui_button(str8_lit("*Previous Directory*"));
+            if (ui_clicked(back_sig)) {
+                String8 new_path = path_strip_dir_name(scratch, file_path);
+                gui_file_system_load_path(fs, new_path);
+            }
             for (int i = 0; i < fs->cached_file_count; i++) {
                 OS_File file = fs->cached_files[i];
-                UI_Signal button_sig = ui_button(file.file_name);
+                UI_Signal button_sig;
+                if (file.flags & OS_FILE_DIRECTORY) {
+                    ui_set_next_text_color(V4(1.f, 0.f, 0.f, 1.f));
+                    button_sig = ui_buttonf("%s/", file.file_name.data);
+                } else {
+                    button_sig = ui_button(file.file_name);
+                }
                 if (ui_clicked(button_sig)) {
                     String8 new_path = path_join(scratch, file_path, file.file_name);
                     if (file.flags & OS_FILE_DIRECTORY) {
