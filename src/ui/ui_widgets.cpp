@@ -56,51 +56,41 @@ internal UI_Signal ui_line_edit(String8 name, void *buffer, u64 max_buffer_capac
 
     u64 pos = *buffer_pos;
     u64 count = *buffer_count;
-    if (ui_key_match(box->key, ui_state->focus_active_box_key)) {
-        for (UI_Event *event = ui_state->events.first, *next = nullptr; event; event = next) {
-            next = event->next;
-            switch (event->type) {
-            case UI_EVENT_TEXT:
-            {
-                ui_pop_event(event);
-                u64 text_count = Min(event->text.count, max_buffer_capacity - count);
-                if (pos == text_count) {
-                    MemoryCopy((u8*)buffer + pos, event->text.data, text_count);
-                } else {
-                    MemoryCopy((u8*)buffer + pos + text_count, (u8*)buffer + pos, text_count);
-                    MemoryCopy((u8*)buffer + pos, event->text.data, text_count);
-                }
-                pos += text_count;
-                count += text_count;
-                break;
+
+    if (signal.text.data) {
+        u64 text_count = Min(signal.text.count, max_buffer_capacity - count);
+        if (pos == text_count) {
+            MemoryCopy((u8*)buffer + pos, signal.text.data, text_count);
+        } else {
+            MemoryCopy((u8*)buffer + pos + text_count, (u8*)buffer + pos, text_count);
+            MemoryCopy((u8*)buffer + pos, signal.text.data, text_count);
+        }
+        pos += text_count;
+        count += text_count;
+    }
+
+    if (ui_pressed(signal)) {
+        switch (signal.key) {
+        case OS_KEY_BACKSPACE:
+            if (pos > 0) {
+                MemoryCopy((u8*)buffer + pos - 1, (u8*)buffer + pos, count - pos);
+                pos -= 1;
+                count -= 1;
             }
-            case UI_EVENT_PRESS:
-            {
-                ui_pop_event(event);
-                switch (event->key) {
-                case OS_KEY_BACKSPACE:
-                    if (pos > 0) {
-                        MemoryCopy((u8*)buffer + pos - 1, (u8*)buffer + pos, count - pos);
-                        pos -= 1;
-                        count -= 1;
-                    }
-                    break;
-                case OS_KEY_LEFT:
-                    if (pos > 0) {
-                        pos -= 1;
-                    }
-                    break; 
-                case OS_KEY_RIGHT:
-                    if (pos < count) {
-                        pos += 1;
-                    }
-                    break;
-                }
-                break;
+            break;
+        case OS_KEY_LEFT:
+            if (pos > 0) {
+                pos -= 1;
             }
+            break; 
+        case OS_KEY_RIGHT:
+            if (pos < count) {
+                pos += 1;
             }
+            break;
         }
     }
+
     *buffer_count = count;
     *buffer_pos = pos;
 
@@ -122,10 +112,7 @@ internal UI_BOX_CUSTOM_DRAW_PROC(ui_draw_scroll_bar) {
 
     v2 thumb_size;
     thumb_size.x = 20.f;
-    // if (rect_height(box->rect) > draw_data->view_bounds.y) {
-    //     return; 
-    // }
-    thumb_size.y = rect_height(box->rect) * (rect_height(box->rect) / draw_data->view_bounds.y);
+    thumb_size.y = (1.f - draw_data->view_bounds.y) * rect_height(box->rect);
     Rect thumb_rect = make_rect(box->rect.x0 + draw_data->thumb_position.x,  box->rect.y0 + draw_data->thumb_position.y, thumb_size.x, thumb_size.y);
     draw_rect(thumb_rect, V4(.65f, .65f, .65f, 1.f));
 }
@@ -133,7 +120,7 @@ internal UI_BOX_CUSTOM_DRAW_PROC(ui_draw_scroll_bar) {
 internal UI_Signal ui_scroll_bar(String8 name, f32 scroll_pt, v2 view_bounds) {
     ui_set_next_fixed_width(20.f);
     ui_set_next_pref_height(ui_pct(1.f, 0.f));
-    UI_Box *scroll_bar = ui_make_box_from_stringf(UI_BOX_DRAW_BACKGROUND, "scroll_bar_%s", name.data);
+    UI_Box *scroll_bar = ui_make_box_from_stringf(UI_BOX_CLICKABLE | UI_BOX_DRAW_BACKGROUND, "scroll_bar_%s", name.data);
     UI_Signal signal = ui_signal_from_box(scroll_bar);
 
     UI_Scroll_Bar_Draw *draw_data = push_array(ui_build_arena(), UI_Scroll_Bar_Draw, 1);
