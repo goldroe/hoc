@@ -46,6 +46,9 @@ inline ENUMTYPE &operator ^=(ENUMTYPE &a, ENUMTYPE b) { return (ENUMTYPE &)(((in
 #define DLLPushBack(f,l,n,next,prev) (((f)==NULL)?\
         ((f)=(l)=(n),(n)->prev=NULL,(n)->next=NULL):\
         ((l)->next=(n),(n)->prev=(l),(l)=(n),(n)->next=NULL))
+#define DLLPushFront(f,l,n,next, prev) (((f)==NULL)?    \
+        ((f)=(l)=(n), (n)->prev=NULL,(n)->next=NULL):\
+        ((n)->next=(f),(f)->prev=n,(f)=(n),(n)->prev=NULL))
 
 #define SLLQueuePush(f,l,n) (((f)==NULL)?\
         ((f)=(l)=(n),(n)->next=NULL):           \
