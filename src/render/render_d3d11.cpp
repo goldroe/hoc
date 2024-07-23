@@ -226,6 +226,23 @@ internal void d3d11_resize_render_target_view(UINT width, UINT height) {
 }
 
 internal void d3d11_render(OS_Handle window_handle, Draw_Bucket *draw_bucket) {
+    D3D11_VIEWPORT viewport{};
+    viewport.TopLeftX = r_d3d11_state->draw_region.x0;
+    viewport.TopLeftY = r_d3d11_state->draw_region.y0;
+    viewport.Width = rect_width(r_d3d11_state->draw_region);
+    viewport.Height = rect_height(r_d3d11_state->draw_region);
+    viewport.MinDepth = 0.0f;
+    viewport.MaxDepth = 1.0f;
+    r_d3d11_state->device_context->RSSetState(r_d3d11_state->rasterizer_state);
+    r_d3d11_state->device_context->RSSetViewports(1, &viewport);
+
+    float clear_color[4] = {0, 0, 0, 1};
+    r_d3d11_state->device_context->ClearRenderTargetView(r_d3d11_state->render_target_view, clear_color);
+    r_d3d11_state->device_context->ClearDepthStencilView(r_d3d11_state->depth_stencil_view, D3D11_CLEAR_DEPTH, 0.0f, 0);
+
+    r_d3d11_state->device_context->OMSetDepthStencilState(r_d3d11_state->depth_stencil_state, 0);
+    r_d3d11_state->device_context->OMSetRenderTargets(1, &r_d3d11_state->render_target_view, r_d3d11_state->depth_stencil_view);
+
     r_d3d11_state->device_context->OMSetBlendState(r_d3d11_state->blend_state, NULL, 0xffffffff);
     r_d3d11_state->device_context->PSSetSamplers(0, 1, &r_d3d11_state->sampler);
 
@@ -295,6 +312,8 @@ internal void d3d11_render(OS_Handle window_handle, Draw_Bucket *draw_bucket) {
         }
         }
     }
+
+    r_d3d11_state->swap_chain->Present(1, 0);
 }
 
 internal void d3d11_render_initialize(HWND window_handle) {
