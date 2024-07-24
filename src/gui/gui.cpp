@@ -102,9 +102,7 @@ internal UI_BOX_CUSTOM_DRAW_PROC(draw_gui_editor) {
             Cursor c0 = editor->cursor;
             Cursor c1 = editor->mark;
             if (c1.position < c0.position) {
-                Cursor t = c1;
-                c1 = c0;
-                c0 = t;
+                Swap(Cursor, c0, c1);
             }
 
             for (s64 line = c0.line; line <= c1.line; line += 1) {
@@ -121,10 +119,8 @@ internal UI_BOX_CUSTOM_DRAW_PROC(draw_gui_editor) {
                 p.x += start * font->glyph_width;
                 p.y += line * font->glyph_height;
 
-                String8 line_string;
-                line_string = str8_jump(box->string, get_position_from_line(editor->buffer, line) + start);
+                String8 line_string = str8_jump(box->string, get_position_from_line(editor->buffer, line) + start);
                 line_string.count = end - start;
-
 
                 f32 width = get_string_width(line_string, font);
                 if (line_string.count == 0) width = font->glyph_width;
@@ -133,7 +129,7 @@ internal UI_BOX_CUSTOM_DRAW_PROC(draw_gui_editor) {
                 draw_rect(rect, V4(.13f, .26f, .51f, 1.f));
             }
         }
-        draw_string(box->string, font, box->text_color, text_position);
+        draw_string_truncated(box->string, font, box->text_color, text_position, box->rect);
 
         v2 cursor_pos = box->rect.p0 + measure_string_size(string_before_cursor, font) + box->view_offset;
         Rect cursor_rect = make_rect(cursor_pos.x, cursor_pos.y, 1.f, font->glyph_height);
@@ -237,6 +233,8 @@ internal void gui_view_update(GUI_View *view) {
         UI_Box *code_body = nullptr;
         UI_Signal signal{};
 
+        Arena *scratch = make_arena(get_malloc_allocator());
+
         UI_Parent(container_body)
             UI_TextAlignment(UI_TEXT_ALIGN_LEFT)
             UI_Font(default_fonts[FONT_DEFAULT])
@@ -253,21 +251,37 @@ internal void gui_view_update(GUI_View *view) {
                 ui_set_next_pref_width(ui_pct(1.f, 0.f));
                 ui_set_next_pref_height(ui_pct(1.f, 0.f));
                 ui_set_next_font_face(editor->face);
-                code_body = ui_make_box_from_stringf(UI_BOX_CLICKABLE | UI_BOX_KEYBOARD_CLICKABLE | UI_BOX_SCROLL | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, "code_view_%d", view->id);
+                code_body = ui_make_box_from_stringf(UI_BOX_CLICKABLE | UI_BOX_KEYBOARD_CLICKABLE | UI_BOX_SCROLL | UI_BOX_DRAW_BACKGROUND, "code_view_%d", view->id);
                 signal = ui_signal_from_box(code_body);
 
+                
                 //@Note File bar
-                int hour, minute, second;
-                os_local_time(&hour, &minute, &second);
                 ui_set_next_pref_width(ui_pct(1.f, 1.f));
-                ui_set_next_pref_height(ui_text_dim(2.f, 1.f));
+                ui_set_next_pref_height(ui_px(editor->face->glyph_height, 1.f));
                 ui_set_next_background_color(V4(.24f, .25f, .25f, 1.f));
-                UI_Box *bottom_bar = ui_make_box_from_stringf(UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, "-\\**-  %s  (%lld,%lld) %d:%d###bottom_bar_%s", file_name, editor->cursor.line, editor->cursor.col, hour, minute, file_name);
+                ui_set_next_child_layout(AXIS_X);
+                String8 bottom_bar_string = str8_zero();
+                UI_Box *bottom_bar = ui_make_box_from_stringf(UI_BOX_DRAW_BACKGROUND, "bottom_bar_%s", file_name);
+                UI_Parent(bottom_bar)
+                    UI_PrefWidth(ui_text_dim(2.f, 1.f))
+                    UI_PrefHeight(ui_pct(1.f, 1.f))
+                {
+                    if (editor->modified) {
+                        ui_set_next_text_color(V4(1.f, 0.f, 0.f, 1.f));
+                        ui_label(str8_lit("*"));
+                    }
+                    UI_Signal sig = ui_label(editor->buffer->file_name);
+                    ui_labelf("   (%lld,%lld)", editor->cursor.line, editor->cursor.col);
+
+                    int hour, minute, second;
+                    os_local_time(&hour, &minute, &second);
+                    ui_labelf("%d:%d", hour, minute);
+                }
             }
 
             ui_set_next_background_color(V4(.18f, .18f, .18f, 1.f));
             f32 ratio = rect_height(code_body->rect) / (buffer_get_line_count(editor->buffer) * editor->face->glyph_height);
-            UI_Signal signal = ui_scroll_bar(editor->buffer->file_name, gui_editor->scroll_pt, V2(0.f, ratio));
+            UI_Signal signal = ui_scroll_bar(editor->buffer->file_name, AXIS_Y, gui_editor->scroll_pt, buffer_get_line_count(editor->buffer) * editor->face->glyph_height);
             if (ui_clicked(signal)) {
                 gui_editor->scroll_pt = ui_mouse().y;
             }
