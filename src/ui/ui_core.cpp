@@ -74,26 +74,26 @@ internal bool ui_key_release(OS_Key key) {
     return result;
 }
 
-internal v2 measure_string_size(String8 string, Face *font_face) {
+internal v2 measure_string_size(String8 string, Face *font) {
     v2 result = V2();
     for (u64 i = 0; i < string.count; i++) {
         u8 c = string.data[i];
         if (c == '\n') {
             result.x = 0.f;
-            result.y += font_face->glyph_height;
+            result.y += font->glyph_height;
             continue;
         }
-        Glyph g = font_face->glyphs[c];
+        Glyph g = font->glyphs[c];
         result.x += g.ax;
     }
     return result;
 }
 
-internal f32 get_string_width(String8 text, Face *font_face) {
+internal f32 get_string_width(String8 text, Face *font) {
     f32 result = 0.0f;
     for (u64 i = 0; i < text.count; i++) {
         u8 c = text.data[i];
-        Glyph g = font_face->glyphs[c];
+        Glyph g = font->glyphs[c];
         result += g.ax;
     }
     return result;
@@ -113,7 +113,6 @@ internal void ui_box_set_string(UI_Box *box, String8 string) {
     box->string = str8_copy(ui_build_arena(), display_string);
 }
 
-//@Note Active setters/getters
 internal UI_Size ui_size(UI_Size_Type type, f32 value, f32 strictness) {
     UI_Size size = { type, value, strictness };
     return size;
@@ -179,38 +178,35 @@ internal UI_Box *ui_make_box(UI_Key key, UI_Box_Flags flags) {
 
     ui_push_box(box, parent);
     
-    if (!ui_state->font_stack.is_empty()) {
-        box->font_face = ui_state->font_stack.top();
-    }
-
-    if (!ui_state->fixed_x_stack.is_empty()) {
+    if (ui_state->fixed_x_stack.top) {
         box->flags |= UI_BOX_FLOATING_X;
-        box->fixed_position[AXIS_X] = ui_state->fixed_x_stack.top();
+        box->fixed_position[AXIS_X] = ui_state->fixed_x_stack.top->v;
     }
-    if (!ui_state->fixed_y_stack.is_empty()) {
+    if (ui_state->fixed_y_stack.top) {
         box->flags |= UI_BOX_FLOATING_Y;
-        box->fixed_position[AXIS_Y] = ui_state->fixed_y_stack.top();
+        box->fixed_position[AXIS_Y] = ui_state->fixed_y_stack.top->v;
     }
 
-    if (!ui_state->fixed_width_stack.is_empty()) {
+    if (ui_state->fixed_width_stack.top) {
         box->flags |= UI_BOX_FIXED_WIDTH;
-        box->fixed_size[AXIS_X] = ui_state->fixed_width_stack.top();
+        box->fixed_size[AXIS_X] = ui_state->fixed_width_stack.top->v;
     } else {
-        box->pref_size[AXIS_X] = ui_state->pref_width_stack.top();
+        box->pref_size[AXIS_X] = ui_state->pref_width_stack.top->v;
     }
-    if (!ui_state->fixed_height_stack.is_empty()) {
+    if (ui_state->fixed_height_stack.top) {
         box->flags |= UI_BOX_FIXED_HEIGHT;
-        box->fixed_size[AXIS_Y] = ui_state->fixed_height_stack.top();
+        box->fixed_size[AXIS_Y] = ui_state->fixed_height_stack.top->v;
     }
     else {
-        box->pref_size[AXIS_Y] = ui_state->pref_height_stack.top();
+        box->pref_size[AXIS_Y] = ui_state->pref_height_stack.top->v;
     }
 
-    box->text_alignment = ui_state->text_alignment_stack.top();
-    box->child_layout_axis = ui_state->child_layout_axis_stack.top();
-    box->background_color = ui_state->background_color_stack.top();
-    box->border_color = ui_state->border_color_stack.top();
-    box->text_color = ui_state->text_color_stack.top();
+    box->font = ui_state->font_stack.top->v;
+    box->text_alignment = ui_state->text_alignment_stack.top->v;
+    box->child_layout_axis = ui_state->child_layout_axis_stack.top->v;
+    box->background_color = ui_state->background_color_stack.top->v;
+    box->border_color = ui_state->border_color_stack.top->v;
+    box->text_color = ui_state->text_color_stack.top->v;
 
     f32 animation_dt = ui_state->animation_dt;
 
@@ -230,19 +226,19 @@ internal UI_Box *ui_make_box(UI_Key key, UI_Box_Flags flags) {
     
     //@Note Auto pop UI stacks
     {
-        if (ui_state->font_stack.auto_pop) { ui_state->font_stack.pop(); ui_state->font_stack.auto_pop = false; }
-        if (ui_state->parent_stack.auto_pop) { ui_state->parent_stack.pop(); ui_state->parent_stack.auto_pop = false; }
-        if (ui_state->fixed_x_stack.auto_pop) { ui_state->fixed_x_stack.pop(); ui_state->fixed_x_stack.auto_pop = false; }
-        if (ui_state->fixed_y_stack.auto_pop) { ui_state->fixed_y_stack.pop(); ui_state->fixed_y_stack.auto_pop = false; }
-        if (ui_state->fixed_width_stack.auto_pop) { ui_state->fixed_width_stack.pop(); ui_state->fixed_width_stack.auto_pop = false; }
-        if (ui_state->fixed_height_stack.auto_pop) { ui_state->fixed_height_stack.pop(); ui_state->fixed_height_stack.auto_pop = false; }
-        if (ui_state->pref_width_stack.auto_pop) { ui_state->pref_width_stack.pop(); ui_state->pref_width_stack.auto_pop = false; }
-        if (ui_state->pref_height_stack.auto_pop) { ui_state->pref_height_stack.pop(); ui_state->pref_height_stack.auto_pop = false; }
-        if (ui_state->child_layout_axis_stack.auto_pop) { ui_state->child_layout_axis_stack.pop(); ui_state->child_layout_axis_stack.auto_pop = false; }
-        if (ui_state->text_alignment_stack.auto_pop) { ui_state->text_alignment_stack.pop(); ui_state->text_alignment_stack.auto_pop = false; }
-        if (ui_state->background_color_stack.auto_pop) { ui_state->background_color_stack.pop(); ui_state->background_color_stack.auto_pop = false; }
-        if (ui_state->border_color_stack.auto_pop) { ui_state->border_color_stack.pop(); ui_state->border_color_stack.auto_pop = false; }
-        if (ui_state->text_color_stack.auto_pop) { ui_state->text_color_stack.pop(); ui_state->text_color_stack.auto_pop = false; }
+        if (ui_state->font_stack.auto_pop) { ui_pop_font(); }
+        if (ui_state->parent_stack.auto_pop) { ui_pop_parent(); }
+        if (ui_state->fixed_x_stack.auto_pop) { ui_pop_fixed_x(); }
+        if (ui_state->fixed_y_stack.auto_pop) { ui_pop_fixed_y(); }
+        if (ui_state->fixed_width_stack.auto_pop) { ui_pop_fixed_width(); }
+        if (ui_state->fixed_height_stack.auto_pop) { ui_pop_fixed_height(); }
+        if (ui_state->pref_width_stack.auto_pop) { ui_pop_pref_width(); }
+        if (ui_state->pref_height_stack.auto_pop) { ui_pop_pref_height(); }
+        if (ui_state->child_layout_axis_stack.auto_pop) { ui_pop_child_layout_axis(); }
+        if (ui_state->text_alignment_stack.auto_pop) { ui_pop_text_alignment(); }
+        if (ui_state->background_color_stack.auto_pop) { ui_pop_background_color(); }
+        if (ui_state->border_color_stack.auto_pop) { ui_pop_border_color(); }
+        if (ui_state->text_color_stack.auto_pop) { ui_pop_text_color(); }
     }
     return box;
 }
@@ -435,9 +431,9 @@ internal void ui_layout_calc_fixed(UI_Box *root, Axis2 axis) {
         case UI_SIZE_TEXT_CONTENT:
             f32 padding = root->pref_size[axis].value;
             if (axis == AXIS_X) {
-                size = get_string_width(root->string, root->font_face);
+                size = get_string_width(root->string, root->font);
             } else {
-                size = root->font_face->glyph_height;
+                size = root->font->glyph_height;
             }
             size += 2.0f * padding;
             break;
@@ -585,14 +581,14 @@ internal v2 ui_text_position(UI_Box *box) {
     switch (box->text_alignment) {
     case UI_TEXT_ALIGN_CENTER:
         text_position.x = box->rect.x0 + 0.5f * rect_width(box->rect);
-        text_position.x -= 0.5f * get_string_width(box->string, box->font_face);
+        text_position.x -= 0.5f * get_string_width(box->string, box->font);
         text_position.x = ClampBot(text_position.x, box->rect.x0);
         break;
     case UI_TEXT_ALIGN_LEFT:
         text_position.x = box->rect.x0;
         break;
     case UI_TEXT_ALIGN_RIGHT:
-        text_position.x = box->rect.x1 - get_string_width(box->string, box->font_face);
+        text_position.x = box->rect.x1 - get_string_width(box->string, box->font);
         text_position.x = ClampBot(text_position.x, box->rect.x0);
         break;
     }
@@ -640,7 +636,21 @@ internal void ui_begin_build(f32 animation_dt, OS_Handle window_handle, OS_Event
         }
     }
 
-    ui_push_font_face(default_fonts[FONT_DEFAULT]);
+    ui_state->font_stack.top = NULL; ui_state->font_stack.first_free = NULL; ui_state->font_stack.auto_pop = false;
+    ui_state->parent_stack.top = NULL; ui_state->parent_stack.first_free = NULL; ui_state->parent_stack.auto_pop = false;
+    ui_state->fixed_x_stack.top = NULL; ui_state->fixed_x_stack.first_free = NULL; ui_state->fixed_x_stack.auto_pop = false;
+    ui_state->fixed_y_stack.top = NULL; ui_state->fixed_y_stack.first_free = NULL; ui_state->fixed_y_stack.auto_pop = false;
+    ui_state->fixed_width_stack.top = NULL; ui_state->fixed_width_stack.first_free = NULL; ui_state->fixed_width_stack.auto_pop = false;
+    ui_state->fixed_height_stack.top = NULL; ui_state->fixed_height_stack.first_free = NULL; ui_state->fixed_height_stack.auto_pop = false;
+    ui_state->pref_width_stack.top = NULL; ui_state->pref_width_stack.first_free = NULL; ui_state->pref_width_stack.auto_pop = false;
+    ui_state->pref_height_stack.top = NULL; ui_state->pref_height_stack.first_free = NULL; ui_state->pref_height_stack.auto_pop = false;
+    ui_state->child_layout_axis_stack.top = NULL; ui_state->child_layout_axis_stack.first_free = NULL; ui_state->child_layout_axis_stack.auto_pop = false;
+    ui_state->text_alignment_stack.top = NULL; ui_state->text_alignment_stack.first_free = NULL; ui_state->text_alignment_stack.auto_pop = false;
+    ui_state->background_color_stack.top = NULL; ui_state->background_color_stack.first_free = NULL; ui_state->background_color_stack.auto_pop = false;
+    ui_state->border_color_stack.top = NULL; ui_state->border_color_stack.first_free = NULL; ui_state->border_color_stack.auto_pop = false;
+    ui_state->text_color_stack.top = NULL; ui_state->text_color_stack.first_free = NULL; ui_state->text_color_stack.auto_pop = false;
+
+    ui_push_font(default_fonts[FONT_DEFAULT]);
     ui_push_text_alignment(UI_TEXT_ALIGN_CENTER);
     ui_push_child_layout_axis(AXIS_Y);
     ui_push_background_color(V4(1.f, 1.f, 1.f, 1.f));
@@ -654,7 +664,7 @@ internal void ui_begin_build(f32 animation_dt, OS_Handle window_handle, OS_Event
     root->fixed_position = V2();
     root->fixed_size = os_get_window_dim(window_handle);
     ui_state->root = root;
-    ui_state->parent_stack.push(root);
+    ui_push_parent(root);
 }
 
 //@Note Get rect, hash and id of each box for collections
@@ -681,67 +691,50 @@ internal void ui_end_build() {
 
     //@Note Clear build for next frame
     arena_clear(ui_build_arena());
-
-    //@Note Pop builder stacks 
-    ui_state->font_stack.reset_count();
-    ui_state->parent_stack.reset_count();
-    ui_state->fixed_x_stack.reset_count();
-    ui_state->fixed_y_stack.reset_count();
-    ui_state->fixed_width_stack.reset_count();
-    ui_state->fixed_height_stack.reset_count();
-    ui_state->pref_width_stack.reset_count();
-    ui_state->pref_height_stack.reset_count();
-    ui_state->text_alignment_stack.reset_count();
-    ui_state->child_layout_axis_stack.reset_count();
-    ui_state->background_color_stack.reset_count();
-    ui_state->border_color_stack.reset_count();
-    ui_state->text_color_stack.reset_count();
-
 }
 
-#define ui_stack_set_next(Stack, V) ui_state->Stack##_stack.push(V); \
-    ui_state->Stack##_stack.auto_pop = true;    \
 
-internal UI_Box *ui_top_parent() { UI_Box *result = ui_state->parent_stack.is_empty() ? NULL : ui_state->parent_stack.top(); return result; }
 
-internal void ui_set_next_font_face(Face *v) { ui_stack_set_next(font, v); }
-internal void ui_set_next_parent(UI_Box *v) { ui_stack_set_next(parent, v) }
-internal void ui_set_next_fixed_x(f32 v) { ui_stack_set_next(fixed_x, v) }
-internal void ui_set_next_fixed_y(f32 v) { ui_stack_set_next(fixed_y, v) }
-internal void ui_set_next_fixed_width(f32 v) { ui_stack_set_next(fixed_width, v) }
-internal void ui_set_next_fixed_height(f32 v) { ui_stack_set_next(fixed_height, v) }
-internal void ui_set_next_pref_width(UI_Size v) { ui_stack_set_next(pref_width, v) }
-internal void ui_set_next_pref_height(UI_Size v) { ui_stack_set_next(pref_height, v) }
-internal void ui_set_next_child_layout(Axis2 v) { ui_stack_set_next(child_layout_axis, v) }
-internal void ui_set_next_text_alignment(UI_Text_Align v) { ui_stack_set_next(text_alignment, v) }
-internal void ui_set_next_background_color(v4 v) { ui_stack_set_next(background_color, v) }
-internal void ui_set_next_border_color(v4 v) { ui_stack_set_next(border_color, v) }
-internal void ui_set_next_text_color(v4 v) { ui_stack_set_next(text_color, v) }
+internal UI_Box *ui_top_parent() { UI_Box *result = nullptr; if (ui_state->parent_stack.top) result = ui_state->parent_stack.top->v; return result; }
 
-internal void ui_push_font_face(Face *font_face) { ui_state->font_stack.push(font_face); }
-internal void ui_push_fixed_x(f32 x) { ui_state->fixed_x_stack.push(x); }
-internal void ui_push_fixed_y(f32 y) { ui_state->fixed_y_stack.push(y); }
-internal void ui_push_fixed_width(f32 width) { ui_state->fixed_width_stack.push(width); }
-internal void ui_push_fixed_height(f32 height) { ui_state->fixed_height_stack.push(height); }
-internal void ui_push_parent(UI_Box *parent) { ui_state->parent_stack.push(parent); }
-internal void ui_push_child_layout_axis(Axis2 axis) { ui_state->child_layout_axis_stack.push(axis); }
-internal void ui_push_pref_width(UI_Size width) { ui_state->pref_width_stack.push(width); }
-internal void ui_push_pref_height(UI_Size height) { ui_state->pref_height_stack.push(height); }
-internal void ui_push_background_color(v4 color) { ui_state->background_color_stack.push(color); }
-internal void ui_push_border_color(v4 color) { ui_state->border_color_stack.push(color); }
-internal void ui_push_text_color(v4 color) { ui_state->text_color_stack.push(color); }
-internal void ui_push_text_alignment(UI_Text_Align alignment) { ui_state->text_alignment_stack.push(alignment); }
+internal void ui_set_next_font(Face *v) { UI_StackSetNext(ui_state, Font, font, Face, v); }
+internal void ui_set_next_parent(UI_Box *v) { UI_StackSetNext(ui_state, Parent, parent, UI_Box, v); }
+internal void ui_set_next_fixed_x(f32 v) { UI_StackSetNext(ui_state, FixedX, fixed_x, f32, v); }
+internal void ui_set_next_fixed_y(f32 v) { UI_StackSetNext(ui_state, FixedY, fixed_y, f32, v); }
+internal void ui_set_next_fixed_width(f32 v) { UI_StackSetNext(ui_state, FixedWidth, fixed_width, f32, v); }
+internal void ui_set_next_fixed_height(f32 v) { UI_StackSetNext(ui_state, FixedHeight, fixed_height, f32, v); }
+internal void ui_set_next_pref_width(UI_Size v) { UI_StackSetNext(ui_state, PrefWidth, pref_width, UI_Size, v); }
+internal void ui_set_next_pref_height(UI_Size v) { UI_StackSetNext(ui_state, PrefHeight, pref_height, UI_Size, v); }
+internal void ui_set_next_child_layout(Axis2 v) { UI_StackSetNext(ui_state, ChildLayoutAxis, child_layout_axis, Axis2, v); }
+internal void ui_set_next_text_alignment(UI_Text_Align v) { UI_StackSetNext(ui_state, TextAlignment, text_alignment, UI_Text_Alignment, v); }
+internal void ui_set_next_background_color(v4 v) { UI_StackSetNext(ui_state, BackgroundColor, background_color, v4, v); }
+internal void ui_set_next_border_color(v4 v) { UI_StackSetNext(ui_state, BorderColor, border_color, v4, v); }
+internal void ui_set_next_text_color(v4 v) { UI_StackSetNext(ui_state, TextColor, text_color, v4, v); }
 
-internal void ui_pop_font_face() { ui_state->font_stack.pop(); }
-internal void ui_pop_fixed_x() { ui_state->fixed_x_stack.pop(); }
-internal void ui_pop_fixed_y() { ui_state->fixed_y_stack.pop(); }
-internal void ui_pop_fixed_width() { ui_state->fixed_width_stack.pop(); }
-internal void ui_pop_fixed_height() { ui_state->fixed_height_stack.pop(); }
-internal void ui_pop_parent() { ui_state->parent_stack.pop(); }
-internal void ui_pop_child_layout_axis() { ui_state->child_layout_axis_stack.pop(); }
-internal void ui_pop_pref_height() { ui_state->pref_height_stack.pop(); }
-internal void ui_pop_pref_width() { ui_state->pref_width_stack.pop(); }
-internal void ui_pop_background_color() { ui_state->background_color_stack.pop(); }
-internal void ui_pop_border_color() { ui_state->border_color_stack.pop(); }
-internal void ui_pop_text_color() { ui_state->text_color_stack.pop(); }
-internal void ui_pop_text_alignment() { ui_state->text_alignment_stack.pop(); }
+internal void ui_push_font(Face *v) { UI_StackPush(ui_state, Font, font, Face, v); }
+internal void ui_push_parent(UI_Box *v) { UI_StackPush(ui_state, Parent, parent, UI_Box, v); }
+internal void ui_push_fixed_x(f32 v) { UI_StackPush(ui_state, FixedX, fixed_x, f32, v); }
+internal void ui_push_fixed_y(f32 v) { UI_StackPush(ui_state, FixedY, fixed_y, f32, v); } 
+internal void ui_push_fixed_width(f32 v) { UI_StackPush(ui_state, FixedWidth, fixed_width, f32, v); }
+internal void ui_push_fixed_height(f32 v) { UI_StackPush(ui_state, FixedHeight, fixed_height, f32, v); }
+internal void ui_push_pref_width(UI_Size v) { UI_StackPush(ui_state, PrefWidth, pref_width, UI_Size, v); }
+internal void ui_push_pref_height(UI_Size v) { UI_StackPush(ui_state, PrefHeight, pref_height, UI_Size, v); }
+internal void ui_push_child_layout_axis(Axis2 v) { UI_StackPush(ui_state, ChildLayoutAxis, child_layout_axis, Axis2, v); }
+internal void ui_push_text_alignment(UI_Text_Align v) { UI_StackPush(ui_state, TextAlignment, text_alignment, UI_Text_Alignment, v); }
+internal void ui_push_background_color(v4 v) { UI_StackPush(ui_state, BackgroundColor, background_color, v4, v); }
+internal void ui_push_border_color(v4 v) { UI_StackPush(ui_state, BorderColor, border_color, v4, v); }
+internal void ui_push_text_color(v4 v) { UI_StackPush(ui_state, TextColor, text_color, v4, v); }
+
+internal void ui_pop_font()  { UI_StackPop(ui_state, Font, font); }
+internal void ui_pop_parent() { UI_StackPop(ui_state, Parent, parent); }
+internal void ui_pop_fixed_x() { UI_StackPop(ui_state, FixedX, fixed_x); }
+internal void ui_pop_fixed_y() { UI_StackPop(ui_state, FixedY, fixed_y); }
+internal void ui_pop_fixed_width() { UI_StackPop(ui_state, FixedWidth, fixed_width); }
+internal void ui_pop_fixed_height() { UI_StackPop(ui_state, FixedHeight, fixed_height); }
+internal void ui_pop_pref_width() { UI_StackPop(ui_state, PrefWidth, pref_width); }
+internal void ui_pop_pref_height() { UI_StackPop(ui_state, PrefHeight, pref_height); }
+internal void ui_pop_child_layout_axis() { UI_StackPop(ui_state, ChildLayoutAxis, child_layout_axis); }
+internal void ui_pop_text_alignment() { UI_StackPop(ui_state, TextAlignment, text_alignment); }
+internal void ui_pop_background_color() { UI_StackPop(ui_state, BackgroundColor, background_color); }
+internal void ui_pop_border_color() { UI_StackPop(ui_state, BorderColor, border_color); }
+internal void ui_pop_text_color() { UI_StackPop(ui_state, TextColor, text_color); }

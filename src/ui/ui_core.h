@@ -3,29 +3,6 @@
 
 typedef u64 UI_Key;
 
-template <class T>
-class UI_Stack {
-public:
-    Auto_Array<T> array;
-    bool auto_pop = false;
-
-    bool is_empty() {
-        return array.is_empty();
-    }
-    void push(T elem) {
-        array.push(elem);
-    }
-    void pop() {
-        array.pop();
-    }
-    T& top() {
-        return array.back();
-    }
-    void reset_count() {
-        array.reset_count();
-    }
-};
-
 enum UI_Size_Type {
     UI_SIZE_NIL,
     UI_SIZE_PIXELS,
@@ -92,7 +69,7 @@ struct UI_Box {
     Axis2 child_layout_axis = AXIS_Y;
     UI_Text_Align text_alignment = UI_TEXT_ALIGN_CENTER;
     // UI_Key next_focus_key = 0;
-    Face *font_face;
+    Face *font;
     v4 background_color = V4(1.f, 1.f, 1.f, 1.f);
     v4 text_color = V4();
     v4 border_color = V4();
@@ -107,6 +84,67 @@ struct UI_Box {
     f32 active_t = 0.f;
     f32 focus_active_t = 0.f;
 };
+
+struct UI_Font_Node                    {UI_Font_Node            *next; Face *v;};
+struct UI_Parent_Node                  {UI_Parent_Node          *next; UI_Box *v;};
+struct UI_FixedX_Node                  {UI_FixedX_Node          *next; f32 v;};
+struct UI_FixedY_Node                  {UI_FixedY_Node          *next; f32 v;};
+struct UI_FixedWidth_Node              {UI_FixedWidth_Node      *next; f32 v;};
+struct UI_FixedHeight_Node             {UI_FixedHeight_Node     *next; f32 v;};
+struct UI_PrefWidth_Node               {UI_PrefWidth_Node       *next; UI_Size v;};
+struct UI_PrefHeight_Node              {UI_PrefHeight_Node      *next; UI_Size v;};
+struct UI_ChildLayoutAxis_Node         {UI_ChildLayoutAxis_Node *next; Axis2 v;};
+struct UI_TextAlignment_Node           {UI_TextAlignment_Node   *next; UI_Text_Align v;};
+struct UI_BackgroundColor_Node         {UI_BackgroundColor_Node *next; v4 v;};
+struct UI_BorderColor_Node             {UI_BorderColor_Node     *next; v4 v;};
+struct UI_TextColor_Node               {UI_TextColor_Node       *next; v4 v;};
+
+#define UI_StackDecls \
+    struct {                                                            \
+    struct { UI_Font_Node            *top; UI_Font_Node            *first_free; b32 auto_pop; } font_stack; \
+    struct { UI_Parent_Node          *top; UI_Parent_Node          *first_free; b32 auto_pop; } parent_stack; \
+    struct { UI_FixedX_Node          *top; UI_FixedX_Node          *first_free; b32 auto_pop; } fixed_x_stack; \
+    struct { UI_FixedY_Node          *top; UI_FixedY_Node          *first_free; b32 auto_pop; } fixed_y_stack; \
+    struct { UI_FixedWidth_Node      *top; UI_FixedWidth_Node      *first_free; b32 auto_pop; } fixed_width_stack; \
+    struct { UI_FixedHeight_Node     *top; UI_FixedHeight_Node     *first_free; b32 auto_pop; } fixed_height_stack; \
+    struct { UI_PrefWidth_Node       *top; UI_PrefWidth_Node       *first_free; b32 auto_pop; } pref_width_stack; \
+    struct { UI_PrefHeight_Node      *top; UI_PrefHeight_Node      *first_free; b32 auto_pop; } pref_height_stack; \
+    struct { UI_ChildLayoutAxis_Node *top; UI_ChildLayoutAxis_Node *first_free; b32 auto_pop; } child_layout_axis_stack; \
+    struct { UI_TextAlignment_Node   *top; UI_TextAlignment_Node   *first_free; b32 auto_pop; } text_alignment_stack; \
+    struct { UI_BackgroundColor_Node *top; UI_BackgroundColor_Node *first_free; b32 auto_pop; } background_color_stack; \
+    struct { UI_BorderColor_Node     *top; UI_BorderColor_Node     *first_free; b32 auto_pop; } border_color_stack; \
+    struct { UI_TextColor_Node       *top; UI_TextColor_Node       *first_free; b32 auto_pop; } text_color_stack; \
+}
+
+#define UI_StackPush(state,upper,lower,type,value)                  \
+    UI_##upper##_Node *node = state->lower##_stack.first_free;      \
+    if (node != NULL) {                                             \
+        SLLStackPop(state->lower##_stack.first_free);               \
+    } else {                                                        \
+        node = push_array(ui_build_arena(), UI_##upper##_Node, 1);   \
+    }                                                               \
+    node->v = value;                                                \
+    SLLStackPush(state->lower##_stack.top, node);                   \
+    state->lower##_stack.auto_pop = false;                          \
+
+#define UI_StackPop(state,upper,lower)                          \
+    UI_##upper##_Node *node = state->lower##_stack.top;         \
+    if (node != NULL) {                                         \
+        SLLStackPop(state->lower##_stack.top);                  \
+        SLLStackPush(state->lower##_stack.first_free, node);    \
+        state->lower##_stack.auto_pop = false;                  \
+    }                                                           \
+
+#define UI_StackSetNext(state,upper,lower,type,value)               \
+    UI_##upper##_Node *node = state->lower##_stack.first_free;      \
+    if (node != NULL) {                                            \
+        SLLStackPop(state->lower##_stack.first_free);               \
+    } else {                                                        \
+        node = push_array(ui_build_arena(), UI_##upper##_Node, 1);   \
+    }                                                               \
+    node->v = value;                                                \
+    SLLStackPush(state->lower##_stack.top, node);                   \
+    state->lower##_stack.auto_pop = true;                           \
 
 enum UI_Event_Type {
     UI_EVENT_ERROR,
@@ -165,20 +203,7 @@ struct UI_State {
     
     f32 animation_dt;
 
-    // per frame construction
-    UI_Stack<Face*> font_stack;
-    UI_Stack<UI_Box*> parent_stack;
-    UI_Stack<f32> fixed_x_stack;
-    UI_Stack<f32> fixed_y_stack;
-    UI_Stack<f32> fixed_width_stack;
-    UI_Stack<f32> fixed_height_stack;
-    UI_Stack<UI_Size> pref_width_stack;
-    UI_Stack<UI_Size> pref_height_stack;
-    UI_Stack<Axis2>   child_layout_axis_stack;
-    UI_Stack<UI_Text_Align> text_alignment_stack;
-    UI_Stack<v4> background_color_stack;
-    UI_Stack<v4> border_color_stack;
-    UI_Stack<v4> text_color_stack;
+    UI_StackDecls;
 };
 
 enum UI_Signal_Flags {
@@ -208,11 +233,9 @@ internal v2 ui_drag_delta();
 #define ui_scroll(sig)       ((sig).flags & UI_SIGNAL_SCROLL)
 #define ui_dragging(sig)     ((sig).flags & UI_SIGNAL_DRAGGING)
 
-internal bool point_in_rect(v2 v, Rect rect);
-
 internal UI_Box *ui_top_parent();
 
-internal void ui_set_next_font_face(Face *font_face);
+internal void ui_set_next_font(Face *v);
 internal void ui_set_next_parent(UI_Box *v);
 internal void ui_set_next_fixed_x(f32 v);
 internal void ui_set_next_fixed_y(f32 v);
@@ -226,30 +249,30 @@ internal void ui_set_next_background_color(v4 v);
 internal void ui_set_next_border_color(v4 v);
 internal void ui_set_next_text_color(v4 v);
 
-internal void ui_push_font_face(Face *font_face);
-internal void ui_push_parent(UI_Box *box);
-internal void ui_push_child_layout_axis(Axis2 axis);
-internal void ui_push_text_alignment(UI_Text_Align alignment);
-internal void ui_push_pref_width(UI_Size size);
-internal void ui_push_pref_height(UI_Size size);
-internal void ui_push_fixed_width(f32 width);
-internal void ui_push_fixed_height(f32 width);
-internal void ui_push_fixed_x(f32 x);
-internal void ui_push_fixed_y(f32 y);
-internal void ui_push_background_color(v4 color);
-internal void ui_push_border_color(v4 color);
-internal void ui_push_text_color(v4 color);
+internal void ui_push_font(Face *v);
+internal void ui_push_parent(UI_Box *v);
+internal void ui_push_fixed_x(f32 v);
+internal void ui_push_fixed_y(f32 v);
+internal void ui_push_fixed_width(f32 v);
+internal void ui_push_fixed_height(f32 v);
+internal void ui_push_pref_width(UI_Size v);
+internal void ui_push_pref_height(UI_Size v);
+internal void ui_push_child_layout_axis(Axis2 v);
+internal void ui_push_text_alignment(UI_Text_Align v);
+internal void ui_push_background_color(v4 v);
+internal void ui_push_border_color(v4 v);
+internal void ui_push_text_color(v4 v);
 
-internal void ui_pop_font_face();
+internal void ui_pop_font();
 internal void ui_pop_parent();
-internal void ui_pop_child_layout_axis();
-internal void ui_pop_text_alignment();
-internal void ui_pop_pref_width();
-internal void ui_pop_pref_height();
-internal void ui_pop_fixed_width();
-internal void ui_pop_fixed_height();
 internal void ui_pop_fixed_x();
 internal void ui_pop_fixed_y();
+internal void ui_pop_fixed_width();
+internal void ui_pop_fixed_height();
+internal void ui_pop_pref_width();
+internal void ui_pop_pref_height();
+internal void ui_pop_child_layout_axis();
+internal void ui_pop_text_alignment();
 internal void ui_pop_background_color();
 internal void ui_pop_border_color();
 internal void ui_pop_text_color();
@@ -274,7 +297,7 @@ internal UI_Size ui_size(UI_Size_Type type, f32 value, f32 strictness);
 #define ui_children_sum(strictness) (ui_size(UI_SIZE_CHILDREN_SUM, 0.0f, strictness))
 #define ui_text_dim(padding, strictness) (ui_size(UI_SIZE_TEXT_CONTENT, padding, strictness))
 
-#define UI_Font(font)     DeferLoop(ui_push_font_face(font), ui_pop_font_face())
+#define UI_Font(font)     DeferLoop(ui_push_font(font), ui_pop_font())
 #define UI_Parent(parent) DeferLoop(ui_push_parent(parent), ui_pop_parent())
 #define UI_ChildLayoutAxis(axis) DeferLoop(ui_push_child_layout_axis(axis), ui_pop_child_layout_axis())
 #define UI_TextAlignment(align) DeferLoop(ui_push_text_alignment(align), ui_pop_text_alignment())
