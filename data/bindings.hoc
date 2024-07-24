@@ -24,6 +24,8 @@
     { "find_file", "O", "Control" },
 
     { "page_up", "PageUp" },
-    { "page_down", "PageDown" }
-    // { "", "" }
+    { "page_down", "PageDown" },
+
+    { "copy", "C", "Control" },
+    { "paste", "V", "Control" }
 }
