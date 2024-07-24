@@ -59,6 +59,7 @@ HOC_COMMAND(self_insert) {
         }
         // if (editor->buffer->post_self_insert_hook) editor->buffer->post_self_insert_hook(text_input);
     }
+    editor->modified = true;
 }
 
 HOC_COMMAND(quit_hoc) {
@@ -343,6 +344,7 @@ HOC_COMMAND(save_buffer) {
     Assert(view->type == GUI_VIEW_EDITOR);
     Hoc_Editor *editor = view->editor.editor;
     write_buffer(editor->buffer);
+    editor->modified = false;
 }
 
 HOC_COMMAND(set_mark) {
@@ -376,6 +378,26 @@ HOC_COMMAND(goto_last_line) {
     Assert(view->type == GUI_VIEW_EDITOR);
     Hoc_Editor *editor = view->editor.editor;
     editor_set_cursor(editor, get_cursor_from_position(editor->buffer, buffer_get_length(editor->buffer)));
+}
+
+HOC_COMMAND(copy) {
+    Hoc_Editor *editor = view->editor.editor;
+    Rng_S64 rng = rng_s64(editor->cursor.position, editor->mark.position);
+    if (rng_s64_len(rng)  > 0) {
+        Arena *scratch = arena_alloc(get_malloc_allocator(), rng_s64_len(rng) + 1);
+        String8 string = buffer_to_string_range(scratch, editor->buffer, rng);
+        os_set_clipboard_text(string);
+        arena_release(scratch);
+    }
+}
+
+HOC_COMMAND(paste) {
+    Hoc_Editor *editor = view->editor.editor;
+    Arena *scratch = make_arena(get_malloc_allocator());
+    String8 string = os_get_clipboard_text(scratch);
+    buffer_insert_string(editor->buffer, editor->cursor.position, string);
+    editor_set_cursor(editor, get_cursor_from_position(editor->buffer, editor->cursor.position + string.count));
+    arena_release(scratch);
 }
 
 internal GUI_View *make_gui_file_system();

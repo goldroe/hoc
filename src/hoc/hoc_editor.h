@@ -11,8 +11,7 @@ struct Hoc_Editor {
     Cursor cursor;
     b32 mark_active;
     Cursor mark;
-
-    f32 cursor_dt;
+    b32 modified;
 };
 
 #endif // HOC_EDITOR_H

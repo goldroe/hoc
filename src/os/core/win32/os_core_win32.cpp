@@ -240,3 +240,32 @@ internal String8 os_current_dir(Arena *arena) {
     String8 result = str8(buffer, (u64)ret + 1);
     return result;
 }
+
+internal String8 os_get_clipboard_text(Arena *arena) {
+    String8 result = str8_zero();
+    if (IsClipboardFormatAvailable(CF_TEXT) && OpenClipboard(0)) {
+        HANDLE handle = GetClipboardData(CF_TEXT);
+        if (handle) {
+            u8 *buffer = (u8 *)GlobalLock(handle);
+            if (buffer) {
+                result = str8_copy(arena, str8_cstring((char *)buffer));
+                GlobalUnlock(handle);
+            }
+        }
+        CloseClipboard();
+    }
+    return result;
+}
+
+internal void os_set_clipboard_text(String8 text) {
+    if (OpenClipboard(0)) {
+        HANDLE handle = GlobalAlloc(GMEM_MOVEABLE, text.count + 1);
+        if (handle) {
+            u8 *buffer = (u8 *)GlobalLock(handle);
+            MemoryCopy(buffer, text.data, text.count);
+            buffer[text.count] = 0;
+            GlobalUnlock(handle);
+            SetClipboardData(CF_TEXT, handle);
+        }
+    }
+}

@@ -17,6 +17,18 @@ internal String8 buffer_to_string(Arena *arena, Hoc_Buffer *buffer) {
     return result;
 }
 
+internal String8 buffer_to_string_range(Arena *arena, Hoc_Buffer *buffer, Rng_S64 rng) {
+    String8 result = str8_zero();
+    s64 count = rng_s64_len(rng);
+    result.data = push_array(arena, u8, count + 1);
+    result.count = count;
+    for (s64 i = 0, rng_idx = rng.min; rng_idx < rng.max; i += 1, rng_idx += 1) {
+        result.data[i] = buffer_at(buffer, rng_idx);
+    }
+    result.data[count] = 0;
+    return result;
+}
+
 internal String8 buffer_to_string_span(Hoc_Buffer *buffer, Span span) {
     String8 result{};
     s64 span_length = span.end - span.start;
