@@ -25,5 +25,7 @@ global Hoc_Command hoc_commands[] = {
 { str8_lit("goto_end_of_line"), goto_end_of_line },
 { str8_lit("goto_first_line"), goto_first_line },
 { str8_lit("goto_last_line"), goto_last_line },
+{ str8_lit("copy"), copy },
+{ str8_lit("paste"), paste },
 { str8_lit("find_file"), find_file },
 };
