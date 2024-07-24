@@ -41,6 +41,59 @@ internal void draw_push_batch_node(R_Batch_List *list, R_Batch_Node *node) {
     list->count += 1;
 }
 
+internal void draw_string_truncated(String8 string, Face *font, v4 color, v2 offset, Rect bounds) {
+    void *tex = draw_bucket->tex;
+    R_Batch_Node *node = draw_bucket->batches.last;
+    if (!node || tex != font->texture) {
+        node = push_array(draw_arena, R_Batch_Node, 1);
+        node->batch.v = (u8 *)draw_arena->current + draw_arena->current->pos;
+        node->batch.params.type = R_PARAMS_UI;
+        node->batch.params.ui.tex = font->texture;
+        node->batch.params.ui.clip = draw_bucket->clip;
+        draw_push_batch_node(&draw_bucket->batches, node);
+        draw_bucket->tex = font->texture;
+    }
+
+    v2 cursor = offset;
+    for (u64 i = 0; i < string.count; i++) {
+        u8 c = string.data[i];
+        if (c == '\n') {
+            cursor.x = offset.x;
+            cursor.y += font->glyph_height;
+            continue;
+        }
+        Glyph g = font->glyphs[c];
+
+        Rect dst;
+        dst.x0 = cursor.x + g.bl;
+        dst.x1 = dst.x0 + g.bx;
+        dst.y0 = cursor.y - g.bt + font->ascend;
+        dst.y1 = dst.y0 + g.by;
+
+        cursor.x += g.ax;
+
+        if (dst.y1 < bounds.y0 || dst.x1 < bounds.x0 || dst.y0 > bounds.y1 || dst.x0 > bounds.x1) {
+            continue; 
+        }
+
+        Rect src;
+        src.x0 = g.to;
+        src.y0 = 0.f;
+        src.x1 = src.x0 + (g.bx / (f32)font->width);
+        src.y1 = src.y0 + (g.by / (f32)font->height);
+
+        R_2D_Vertex tl = { V2(dst.x0, dst.y0), V2(src.x0, src.y0), color };
+        R_2D_Vertex tr = { V2(dst.x1, dst.y0), V2(src.x1, src.y0), color };
+        R_2D_Vertex bl = { V2(dst.x0, dst.y1), V2(src.x0, src.y1), color };
+        R_2D_Vertex br = { V2(dst.x1, dst.y1), V2(src.x1, src.y1), color };
+
+        draw_batch_push_vertex(&node->batch, bl);
+        draw_batch_push_vertex(&node->batch, tl);
+        draw_batch_push_vertex(&node->batch, tr);
+        draw_batch_push_vertex(&node->batch, br);
+    }
+}
+
 internal void draw_string(String8 string, Face *font_face, v4 color, v2 offset) {
     void *tex = draw_bucket->tex;
     R_Batch_Node *node = draw_bucket->batches.last;
