@@ -3,20 +3,20 @@
 #define STB_SPRINTF_DECORATE(name) hoc_##name
 #include <stb_sprintf.h>
 
-#include "core/core.h"
+#include "base/base_core.h"
 
-#include "core/core_arena.h"
-#include "core/core_strings.h"
+#include "base/base_arena.h"
+#include "base/base_strings.h"
 #include "os/os.h"
 #include "os/core/os_core.h"
 #include "meta.h"
 #include "auto_array.h"
-#include "lexer.h"
+#include "lexer/lexer.h"
 
-#include "core/core_arena.cpp"
-#include "core/core_strings.cpp"
+#include "base/base_arena.cpp"
+#include "base/base_strings.cpp"
 #include "os/os.cpp"
-#include "lexer.cpp"
+#include "lexer/lexer.cpp"
 
 struct Metagen_Member {
     String8 ident;
@@ -46,11 +46,10 @@ Auto_Array<String8> command_names;
 
 int main(int argc, char **argv) {
     string_arena = make_arena(get_malloc_allocator());
-    os_chdir(str8_lit("src"));
 
     String8 files[] = {
         // str8_lit("lexer.h")
-        str8_lit("hoc_commands.cpp"),
+        str8_lit("src/hoc/hoc_commands.cpp"),
     };
 
     for (int i = 0; i < ArrayCount(files); i++) {
@@ -79,7 +78,8 @@ int main(int argc, char **argv) {
     // }
     // fprintf(meta_h_file, "};\n");
 
-    FILE *meta_c_file = fopen("generated_hoc_commands.cpp", "w");
+    FILE *meta_c_file = fopen("src/hoc/generated_hoc_commands.cpp", "w");
+    Assert(meta_c_file);
     fprintf(meta_c_file, "global Hoc_Command hoc_commands[] = {\n");
     for (u64 i = 0; i < command_names.count; i++) {
         String8 command = command_names[i];
@@ -94,6 +94,8 @@ int main(int argc, char **argv) {
 
     fclose(meta_c_file);
     #endif
+
+    printf("Done meta generation\n");
 
     return 0;
 }
