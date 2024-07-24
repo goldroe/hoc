@@ -171,7 +171,6 @@ internal UI_Box *ui_make_box(UI_Key key, UI_Box_Flags flags) {
     box->flags = flags;
     box->pref_size[0] = {};
     box->pref_size[1] = {};
-    box->fixed_position = V2();
     box->fixed_size = V2();
 
     if (parent == nullptr) {
@@ -552,24 +551,19 @@ internal void ui_layout_resolve_violations(UI_Box *root, Axis2 axis) {
 }
 
 internal void ui_layout_place_boxes(UI_Box *root, Axis2 axis) {
-    f32 p = 0.f;
-    UI_Box *parent = root->parent;
-    if (parent) {
-        p = parent->fixed_position[axis];
-        if (!(root->flags & (UI_BOX_FLOATING_X << axis))) {
-            //@Note Add up sibling sizes if on the layout axis, so that we "grow" in the layout
-            if (axis == parent->child_layout_axis) {
-                for (UI_Box *sibling = parent->first; sibling != root; sibling = sibling->next) {
-                    p += sibling->fixed_size[axis];
-                }
+    f32 layout_position = 0.f;
+    for (UI_Box *child = root->first; child != nullptr; child = child->next) {
+        if (!(child->flags & UI_BOX_FLOATING_X<<axis)) {
+            child->fixed_position[axis] = layout_position;
+            if (root->child_layout_axis == axis) {
+                layout_position += child->fixed_size[axis];
             }
         }
-    }
-    p += root->fixed_position[axis];
 
-    root->rect.p0[axis] = p;
-    root->rect.p1[axis] = p + root->fixed_size[axis];
-    
+        child->rect.p0[axis] = root->rect.p0[axis] + child->fixed_position[axis];
+        child->rect.p1[axis] = child->rect.p0[axis] + child->fixed_size[axis];
+    }
+
     for (UI_Box *child = root->first; child != nullptr; child = child->next) {
         ui_layout_place_boxes(child, axis);
     }
