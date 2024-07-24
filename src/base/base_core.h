@@ -86,6 +86,8 @@ void AssertMessage(const char *message, const char *file, int line) {
 #define global static
 #define local_persist static
 
+#define Swap(T,a,b) do{T __t = a; a = b; b = __t;}while(0)
+
 #include <stdint.h>
 typedef uint8_t  u8;
 typedef uint16_t u16;
@@ -115,6 +117,14 @@ union Rng_U64 {
         u64 max;
     };
     u64 v[2];
+};
+
+union Rng_S64 {
+    struct {
+        s64 min;
+        s64 max;
+    };   
+    s64 v[2];
 };
 
 union v2i {
