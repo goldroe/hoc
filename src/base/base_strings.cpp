@@ -50,16 +50,6 @@ internal String8 str8_concat(Arena *arena, String8 first, String8 second) {
     return result;
 }
 
-internal void str8_append(String8 *first, String8 second) {
-    String8 temp;
-    temp.count = first->count + second.count;
-    temp.data = (u8 *)malloc(temp.count + 1);
-    MemoryCopy(temp.data, first->data, first->count);
-    MemoryCopy(temp.data + first->count, second.data, second.count);
-    temp.data[temp.count] = 0;
-    *first = temp;
-}
-
 internal bool str8_match(String8 first, String8 second) {
     if (first.count != second.count) return false;
     for (u64 i = 0; i < first.count; i++) {
