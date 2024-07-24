@@ -38,12 +38,12 @@ internal UI_BOX_CUSTOM_DRAW_PROC(ui_draw_line_edit) {
     box->string = edit_string;
     v2 text_position = ui_text_position(box);
     text_position += box->view_offset;
-    draw_string(edit_string, box->font_face, box->text_color, text_position);
+    draw_string(edit_string, box->font, box->text_color, text_position);
 
     String8 string_before_cursor = edit_string;
     string_before_cursor.count = (u64)draw_data->cursor;
-    v2 c_pos = text_position + measure_string_size(string_before_cursor, box->font_face);
-    Rect c_rect = make_rect(c_pos.x, c_pos.y, 2.f, box->font_face->glyph_height);
+    v2 c_pos = text_position + measure_string_size(string_before_cursor, box->font);
+    Rect c_rect = make_rect(c_pos.x, c_pos.y, 2.f, box->font->glyph_height);
     if (ui_key_match(box->key, ui_state->focus_active_box_key)) {
         draw_rect(c_rect, box->text_color);
     }

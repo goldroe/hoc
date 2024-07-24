@@ -197,7 +197,7 @@ internal void draw_ui_box(UI_Box *box) {
     if (box->flags & UI_BOX_DRAW_TEXT) {
         v2 text_position = ui_text_position(box);
         text_position += box->view_offset;
-        draw_string(box->string, box->font_face, box->text_color, text_position);
+        draw_string(box->string, box->font, box->text_color, text_position);
     }
 
     if (box->custom_draw_proc) {

@@ -55,8 +55,8 @@ internal Cursor editor_mouse_to_cursor(GUI_Editor *gui_editor, v2 mouse) {
     Cursor result{};
     f32 y = mouse.y - gui_editor->box->view_offset.y - gui_editor->box->rect.y0;
     f32 x = mouse.x - gui_editor->box->view_offset.x - gui_editor->box->rect.x0;
-    s64 line = (s64)(y / gui_editor->box->font_face->glyph_height);
-    s64 col = (s64)(x / gui_editor->box->font_face->glyph_width);
+    s64 line = (s64)(y / gui_editor->box->font->glyph_height);
+    s64 col = (s64)(x / gui_editor->box->font->glyph_width);
     if (line >= buffer_get_line_count(editor->buffer)) {
         result = get_cursor_from_position(editor->buffer, buffer_get_length(editor->buffer));
     } else {
@@ -87,7 +87,7 @@ internal UI_BOX_CUSTOM_DRAW_PROC(draw_gui_editor) {
     String8 string_before_cursor = box->string;
     string_before_cursor.count = editor->cursor.position;
 
-    Face *font = box->font_face;
+    Face *font = box->font;
 
     // Draw_Clip(box->rect) {
         draw_rect(box->rect, box->background_color);
@@ -250,7 +250,7 @@ internal void gui_view_update(GUI_View *view) {
                 //@Note Code body
                 ui_set_next_pref_width(ui_pct(1.f, 0.f));
                 ui_set_next_pref_height(ui_pct(1.f, 0.f));
-                ui_set_next_font_face(editor->face);
+                ui_set_next_font(editor->face);
                 code_body = ui_make_box_from_stringf(UI_BOX_CLICKABLE | UI_BOX_KEYBOARD_CLICKABLE | UI_BOX_SCROLL | UI_BOX_DRAW_BACKGROUND, "code_view_%d", view->id);
                 signal = ui_signal_from_box(code_body);
 
