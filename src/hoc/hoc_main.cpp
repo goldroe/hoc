@@ -199,6 +199,12 @@ internal LRESULT CALLBACK window_proc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM
         break;
     }
 
+    case WM_SETCURSOR:
+    {
+        SetCursor(win32_hcursor);
+        break;
+    }
+
     case WM_LBUTTONUP:
     case WM_MBUTTONUP:
     case WM_RBUTTONUP:
@@ -339,7 +345,7 @@ internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handl
 }
 
 int main(int argc, char **argv) {
-    int target_frames_per_second = 60;
+    int target_frames_per_second = 75;
     int target_ms_per_frame = (int)(1000.f / (f32)target_frames_per_second);
     
     argc--; argv++;
@@ -410,7 +416,7 @@ int main(int argc, char **argv) {
     def_editor_view->key_map = default_key_map;
     Hoc_Editor *def_editor = def_editor_view->editor.editor;
     def_editor->buffer = make_buffer(file_name);
-    def_editor->face = default_fonts[FONT_DEFAULT];
+    def_editor->font = default_fonts[FONT_DEFAULT];
     
     f32 dt = 0.0f;
     srand((s32)get_wall_clock());
@@ -426,7 +432,7 @@ int main(int argc, char **argv) {
             TranslateMessage(&message);
             DispatchMessageA(&message);
         }
-
+        
         v2 window_dim = os_get_window_dim(window_handle);
         if (window_dim != old_window_dim) {
             //@Note Do not resize if window is minimized

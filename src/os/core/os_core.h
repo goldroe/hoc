@@ -109,7 +109,14 @@ enum OS_Key {
     OS_KEY_COUNT
 };
 
-
+enum OS_Cursor {
+    OS_CURSOR_NIL,
+    OS_CURSOR_ARROW,
+    OS_CURSOR_IBEAM,
+    OS_CURSOR_HAND,
+    OS_CURSOR_SIZE_NS,
+    OS_CURSOR_SIZE_WE,
+};
 
 enum OS_Event_Type {
     OS_EVENT_ERROR,

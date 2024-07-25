@@ -68,7 +68,6 @@ struct UI_Box {
     UI_Size pref_size[AXIS_COUNT];
     Axis2 child_layout_axis = AXIS_Y;
     UI_Text_Align text_alignment = UI_TEXT_ALIGN_CENTER;
-    // UI_Key next_focus_key = 0;
     Face *font;
     v4 background_color = V4(1.f, 1.f, 1.f, 1.f);
     v4 text_color = V4();
@@ -76,6 +75,7 @@ struct UI_Box {
     String8 string = str8_zero();
     UI_Box_Draw_Proc *custom_draw_proc;
     void *draw_data;
+    OS_Cursor cursor;
 
     //@Note Persistent data
     v2 view_offset;
@@ -85,19 +85,20 @@ struct UI_Box {
     f32 focus_active_t = 0.f;
 };
 
-struct UI_Font_Node                    {UI_Font_Node            *next; Face *v;};
-struct UI_Parent_Node                  {UI_Parent_Node          *next; UI_Box *v;};
-struct UI_FixedX_Node                  {UI_FixedX_Node          *next; f32 v;};
-struct UI_FixedY_Node                  {UI_FixedY_Node          *next; f32 v;};
-struct UI_FixedWidth_Node              {UI_FixedWidth_Node      *next; f32 v;};
-struct UI_FixedHeight_Node             {UI_FixedHeight_Node     *next; f32 v;};
-struct UI_PrefWidth_Node               {UI_PrefWidth_Node       *next; UI_Size v;};
-struct UI_PrefHeight_Node              {UI_PrefHeight_Node      *next; UI_Size v;};
-struct UI_ChildLayoutAxis_Node         {UI_ChildLayoutAxis_Node *next; Axis2 v;};
-struct UI_TextAlignment_Node           {UI_TextAlignment_Node   *next; UI_Text_Align v;};
-struct UI_BackgroundColor_Node         {UI_BackgroundColor_Node *next; v4 v;};
-struct UI_BorderColor_Node             {UI_BorderColor_Node     *next; v4 v;};
-struct UI_TextColor_Node               {UI_TextColor_Node       *next; v4 v;};
+struct UI_Font_Node                    { UI_Font_Node            *next; Face *v; };
+struct UI_Parent_Node                  { UI_Parent_Node          *next; UI_Box *v; };
+struct UI_FixedX_Node                  { UI_FixedX_Node          *next; f32 v; };
+struct UI_FixedY_Node                  { UI_FixedY_Node          *next; f32 v; };
+struct UI_FixedWidth_Node              { UI_FixedWidth_Node      *next; f32 v; };
+struct UI_FixedHeight_Node             { UI_FixedHeight_Node     *next; f32 v; };
+struct UI_PrefWidth_Node               { UI_PrefWidth_Node       *next; UI_Size v; };
+struct UI_PrefHeight_Node              { UI_PrefHeight_Node      *next; UI_Size v; };
+struct UI_ChildLayoutAxis_Node         { UI_ChildLayoutAxis_Node *next; Axis2 v; };
+struct UI_TextAlignment_Node           { UI_TextAlignment_Node   *next; UI_Text_Align v; };
+struct UI_BackgroundColor_Node         { UI_BackgroundColor_Node *next; v4 v; };
+struct UI_BorderColor_Node             { UI_BorderColor_Node     *next; v4 v; };
+struct UI_TextColor_Node               { UI_TextColor_Node       *next; v4 v; };
+struct UI_Cursor_Node                  { UI_Cursor_Node          *next; OS_Cursor v; };
 
 #define UI_StackDecls \
     struct {                                                            \
@@ -114,6 +115,7 @@ struct UI_TextColor_Node               {UI_TextColor_Node       *next; v4 v;};
     struct { UI_BackgroundColor_Node *top; UI_BackgroundColor_Node *first_free; b32 auto_pop; } background_color_stack; \
     struct { UI_BorderColor_Node     *top; UI_BorderColor_Node     *first_free; b32 auto_pop; } border_color_stack; \
     struct { UI_TextColor_Node       *top; UI_TextColor_Node       *first_free; b32 auto_pop; } text_color_stack; \
+    struct { UI_Cursor_Node          *top; UI_Cursor_Node          *first_free; b32 auto_pop; } cursor_stack; \
 }
 
 #define UI_StackPush(state,upper,lower,type,value)                  \
@@ -192,7 +194,7 @@ struct UI_State {
     UI_Key active_box_key = 0;
     UI_Key hot_box_key = 0;
 
-    v2 mouse_position;
+    v2 mouse;
     v2i mouse_drag_start;
     b32 mouse_dragging;
 
@@ -228,7 +230,7 @@ struct UI_Signal {
 internal v2 ui_drag_delta();
 
 #define ui_clicked(sig)      ((sig).flags & UI_SIGNAL_CLICKED)
-#define ui_hover(sig)        ((sig).flags & UI_SIGNAL_PRESSED)
+#define ui_hover(sig)        ((sig).flags & UI_SIGNAL_HOVER)
 #define ui_pressed(sig)      ((sig).flags & UI_SIGNAL_PRESSED)
 #define ui_scroll(sig)       ((sig).flags & UI_SIGNAL_SCROLL)
 #define ui_dragging(sig)     ((sig).flags & UI_SIGNAL_DRAGGING)
@@ -248,6 +250,7 @@ internal void ui_set_next_text_alignment(UI_Text_Align v);
 internal void ui_set_next_background_color(v4 v);
 internal void ui_set_next_border_color(v4 v);
 internal void ui_set_next_text_color(v4 v);
+internal void ui_set_next_cursor(OS_Cursor v);
 
 internal void ui_push_font(Face *v);
 internal void ui_push_parent(UI_Box *v);
@@ -262,6 +265,7 @@ internal void ui_push_text_alignment(UI_Text_Align v);
 internal void ui_push_background_color(v4 v);
 internal void ui_push_border_color(v4 v);
 internal void ui_push_text_color(v4 v);
+internal void ui_push_cursor(OS_Cursor v);
 
 internal void ui_pop_font();
 internal void ui_pop_parent();
@@ -276,6 +280,7 @@ internal void ui_pop_text_alignment();
 internal void ui_pop_background_color();
 internal void ui_pop_border_color();
 internal void ui_pop_text_color();
+internal void ui_pop_cursor();
 
 internal void ui_begin_frame(OS_Handle window_handle);
 internal void ui_end_frame();

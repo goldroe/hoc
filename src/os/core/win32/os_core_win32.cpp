@@ -1,5 +1,6 @@
 #include "os_core_win32.h"
 
+global HCURSOR win32_hcursor;
 global OS_Key keycode_table[256];
 
 internal OS_Event_Flags os_event_flags() {
@@ -268,4 +269,58 @@ internal void os_set_clipboard_text(String8 text) {
             SetClipboardData(CF_TEXT, handle);
         }
     }
+}
+
+internal void os_set_cursor(OS_Cursor cursor) {
+    local_persist HCURSOR hcursor;
+    switch (cursor) {
+    default:
+    case OS_CURSOR_ARROW:
+        hcursor = LoadCursorA(NULL, IDC_ARROW);
+        break;
+    case OS_CURSOR_IBEAM:
+        hcursor = LoadCursorA(NULL, IDC_IBEAM);
+        break;
+    case OS_CURSOR_HAND:
+        hcursor = LoadCursorA(NULL, IDC_HAND);
+        break;
+    case OS_CURSOR_SIZE_NS:
+        hcursor = LoadCursorA(NULL, IDC_SIZENS);
+        break;
+    case OS_CURSOR_SIZE_WE:
+        hcursor = LoadCursorA(NULL, IDC_SIZEWE);
+        break;
+    }
+    
+    if (win32_hcursor != hcursor) {
+        PostMessageA(0, WM_SETCURSOR, 0, 0);
+        win32_hcursor = hcursor;
+    }
+}
+
+internal Rect os_client_rect_from_window(OS_Handle window_handle) {
+    RECT client_rect;
+    GetClientRect((HWND)window_handle, &client_rect);
+    Rect result;
+    result.x0 = (f32)client_rect.left;
+    result.x1 = (f32)client_rect.right;
+    result.y0 = (f32)client_rect.top;
+    result.y1 = (f32)client_rect.bottom;
+    return result;
+}
+
+internal v2 os_mouse_from_window(OS_Handle window_handle) {
+    POINT pt;
+    GetCursorPos(&pt);
+    ScreenToClient((HWND)window_handle, &pt);
+    v2 result;
+    result.x = (f32)pt.x;
+    result.y = (f32)pt.y;
+    return result;
+}
+
+internal bool os_window_is_focused(OS_Handle window_handle) {
+    HWND active_hwnd = GetActiveWindow();
+    bool result = (OS_Handle)active_hwnd == window_handle;
+    return result;
 }

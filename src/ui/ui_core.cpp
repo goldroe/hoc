@@ -43,7 +43,7 @@ internal void ui_pop_event(UI_Event *event) {
     ui_state->events.count -= 1;
 }
 
-internal v2 ui_mouse() {return ui_state->mouse_position;}
+internal v2 ui_mouse() {return ui_state->mouse;}
 internal v2 ui_drag_delta() {return ui_mouse() - v2_v2i(ui_state->mouse_drag_start);}
 
 internal bool ui_key_press(OS_Key key) {
@@ -207,6 +207,7 @@ internal UI_Box *ui_make_box(UI_Key key, UI_Box_Flags flags) {
     box->background_color = ui_state->background_color_stack.top->v;
     box->border_color = ui_state->border_color_stack.top->v;
     box->text_color = ui_state->text_color_stack.top->v;
+    box->cursor = ui_state->cursor_stack.top->v;
 
     f32 animation_dt = ui_state->animation_dt;
 
@@ -239,6 +240,7 @@ internal UI_Box *ui_make_box(UI_Key key, UI_Box_Flags flags) {
         if (ui_state->background_color_stack.auto_pop) { ui_pop_background_color(); }
         if (ui_state->border_color_stack.auto_pop) { ui_pop_border_color(); }
         if (ui_state->text_color_stack.auto_pop) { ui_pop_text_color(); }
+        if (ui_state->cursor_stack.auto_pop) { ui_pop_cursor(); }
     }
     return box;
 }
@@ -405,7 +407,6 @@ internal UI_Signal ui_signal_from_box(UI_Box *box) {
 
     if (box->flags & UI_BOX_CLICKABLE &&
         event_in_bounds && !do_later) {
-        // printf("%llu\n", box->key);
         signal.flags |= UI_SIGNAL_HOVER;
         ui_state->hot_box_key = box->key;
     }
@@ -597,6 +598,7 @@ internal v2 ui_text_position(UI_Box *box) {
 
 internal void ui_begin_build(f32 animation_dt, OS_Handle window_handle, OS_Event_List *events) {
     ui_state->animation_dt = animation_dt;
+    ui_state->mouse = os_window_is_focused(window_handle) ? os_mouse_from_window(window_handle) : V2(-100.f, -100.f);
 
     UI_Event *ui_event = nullptr;
     for (OS_Event *event = events->first; event; event = event->next) {
@@ -605,8 +607,8 @@ internal void ui_begin_build(f32 animation_dt, OS_Handle window_handle, OS_Event
             Assert(0);
             break;
         case OS_EVENT_MOUSEMOVE:
-            ui_state->mouse_position.x = (f32)event->pos.x;
-            ui_state->mouse_position.y = (f32)event->pos.y;
+            ui_state->mouse.x = (f32)event->pos.x;
+            ui_state->mouse.y = (f32)event->pos.y;
             break;
         case OS_EVENT_MOUSEDOWN:
             ui_event = ui_push_event(UI_EVENT_MOUSE_PRESS);
@@ -649,6 +651,7 @@ internal void ui_begin_build(f32 animation_dt, OS_Handle window_handle, OS_Event
     ui_state->background_color_stack.top = NULL; ui_state->background_color_stack.first_free = NULL; ui_state->background_color_stack.auto_pop = false;
     ui_state->border_color_stack.top = NULL; ui_state->border_color_stack.first_free = NULL; ui_state->border_color_stack.auto_pop = false;
     ui_state->text_color_stack.top = NULL; ui_state->text_color_stack.first_free = NULL; ui_state->text_color_stack.auto_pop = false;
+    ui_state->cursor_stack.top = NULL; ui_state->cursor_stack.first_free = NULL; ui_state->cursor_stack.auto_pop = false;
 
     ui_push_font(default_fonts[FONT_DEFAULT]);
     ui_push_text_alignment(UI_TEXT_ALIGN_CENTER);
@@ -656,6 +659,7 @@ internal void ui_begin_build(f32 animation_dt, OS_Handle window_handle, OS_Event
     ui_push_background_color(V4(1.f, 1.f, 1.f, 1.f));
     ui_push_text_color(V4(.16f, .16f, .16f, 1.f));
     ui_push_border_color(V4(.2f, .2f, .2f, 1.f));
+    ui_push_cursor(OS_CURSOR_ARROW);
     
     ui_state->build_counter = 0;
 
@@ -681,6 +685,19 @@ internal void ui_collect_build_boxes(UI_Box *root) {
 }
 
 internal void ui_end_build() {
+    UI_Box *hover_box = ui_box_from_key(ui_state->hot_box_key);
+    UI_Box *active_box = ui_box_from_key(ui_state->active_box_key);
+    UI_Box *focus_active_box = ui_box_from_key(ui_state->focus_active_box_key);
+    if (hover_box) {
+        os_set_cursor(hover_box->cursor);
+    } else {
+        os_set_cursor(OS_CURSOR_ARROW);
+    }
+
+    if (hover_box && !rect_contains(hover_box->rect, ui_mouse())) {
+        ui_state->hot_box_key = 0;
+    }
+
     ui_state->last_build_collection.reset_count();
     ui_collect_build_boxes(ui_state->root);
 
@@ -692,8 +709,6 @@ internal void ui_end_build() {
     //@Note Clear build for next frame
     arena_clear(ui_build_arena());
 }
-
-
 
 internal UI_Box *ui_top_parent() { UI_Box *result = nullptr; if (ui_state->parent_stack.top) result = ui_state->parent_stack.top->v; return result; }
 
@@ -710,6 +725,7 @@ internal void ui_set_next_text_alignment(UI_Text_Align v) { UI_StackSetNext(ui_s
 internal void ui_set_next_background_color(v4 v) { UI_StackSetNext(ui_state, BackgroundColor, background_color, v4, v); }
 internal void ui_set_next_border_color(v4 v) { UI_StackSetNext(ui_state, BorderColor, border_color, v4, v); }
 internal void ui_set_next_text_color(v4 v) { UI_StackSetNext(ui_state, TextColor, text_color, v4, v); }
+internal void ui_set_next_cursor(OS_Cursor v) { UI_StackSetNext(ui_state, Cursor, cursor, OS_Cursor, v); }
 
 internal void ui_push_font(Face *v) { UI_StackPush(ui_state, Font, font, Face, v); }
 internal void ui_push_parent(UI_Box *v) { UI_StackPush(ui_state, Parent, parent, UI_Box, v); }
@@ -724,6 +740,7 @@ internal void ui_push_text_alignment(UI_Text_Align v) { UI_StackPush(ui_state, T
 internal void ui_push_background_color(v4 v) { UI_StackPush(ui_state, BackgroundColor, background_color, v4, v); }
 internal void ui_push_border_color(v4 v) { UI_StackPush(ui_state, BorderColor, border_color, v4, v); }
 internal void ui_push_text_color(v4 v) { UI_StackPush(ui_state, TextColor, text_color, v4, v); }
+internal void ui_push_cursor(OS_Cursor v) { UI_StackPush(ui_state, Cursor, cursor, OS_Cursor, v); }
 
 internal void ui_pop_font()  { UI_StackPop(ui_state, Font, font); }
 internal void ui_pop_parent() { UI_StackPop(ui_state, Parent, parent); }
@@ -738,3 +755,4 @@ internal void ui_pop_text_alignment() { UI_StackPop(ui_state, TextAlignment, tex
 internal void ui_pop_background_color() { UI_StackPop(ui_state, BackgroundColor, background_color); }
 internal void ui_pop_border_color() { UI_StackPop(ui_state, BorderColor, border_color); }
 internal void ui_pop_text_color() { UI_StackPop(ui_state, TextColor, text_color); }
+internal void ui_pop_cursor() { UI_StackPop(ui_state, Cursor, cursor); }
