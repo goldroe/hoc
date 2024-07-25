@@ -233,8 +233,6 @@ internal void gui_view_update(GUI_View *view) {
         UI_Box *code_body = nullptr;
         UI_Signal signal{};
 
-        Arena *scratch = make_arena(get_malloc_allocator());
-
         UI_Parent(container_body)
             UI_TextAlignment(UI_TEXT_ALIGN_LEFT)
             UI_Font(default_fonts[FONT_DEFAULT])
@@ -250,14 +248,14 @@ internal void gui_view_update(GUI_View *view) {
                 //@Note Code body
                 ui_set_next_pref_width(ui_pct(1.f, 0.f));
                 ui_set_next_pref_height(ui_pct(1.f, 0.f));
-                ui_set_next_font(editor->face);
+                ui_set_next_font(editor->font);
+                ui_set_next_cursor(OS_CURSOR_IBEAM);
                 code_body = ui_make_box_from_stringf(UI_BOX_CLICKABLE | UI_BOX_KEYBOARD_CLICKABLE | UI_BOX_SCROLL | UI_BOX_DRAW_BACKGROUND, "code_view_%d", view->id);
                 signal = ui_signal_from_box(code_body);
-
                 
                 //@Note File bar
                 ui_set_next_pref_width(ui_pct(1.f, 1.f));
-                ui_set_next_pref_height(ui_px(editor->face->glyph_height, 1.f));
+                ui_set_next_pref_height(ui_px(editor->font->glyph_height, 1.f));
                 ui_set_next_background_color(V4(.24f, .25f, .25f, 1.f));
                 ui_set_next_child_layout(AXIS_X);
                 String8 bottom_bar_string = str8_zero();
@@ -266,7 +264,7 @@ internal void gui_view_update(GUI_View *view) {
                     UI_PrefWidth(ui_text_dim(2.f, 1.f))
                     UI_PrefHeight(ui_pct(1.f, 1.f))
                 {
-                    if (editor->modified) {
+                    if (editor->buffer->modified) {
                         ui_set_next_text_color(V4(1.f, 0.f, 0.f, 1.f));
                         ui_label(str8_lit("*"));
                     }
@@ -280,9 +278,9 @@ internal void gui_view_update(GUI_View *view) {
             }
 
             ui_set_next_background_color(V4(.18f, .18f, .18f, 1.f));
-            f32 ratio = rect_height(code_body->rect) / (buffer_get_line_count(editor->buffer) * editor->face->glyph_height);
-            UI_Signal signal = ui_scroll_bar(editor->buffer->file_name, AXIS_Y, gui_editor->scroll_pt, buffer_get_line_count(editor->buffer) * editor->face->glyph_height);
-            if (ui_clicked(signal)) {
+            f32 ratio = rect_height(code_body->rect) / (buffer_get_line_count(editor->buffer) * editor->font->glyph_height);
+            UI_Signal signal = ui_scroll_bar(editor->buffer->file_name, AXIS_Y, gui_editor->scroll_pt, buffer_get_line_count(editor->buffer) * editor->font->glyph_height);
+            if (ui_clicked(signal) || ui_dragging(signal)) {
                 gui_editor->scroll_pt = ui_mouse().y;
             }
         }
@@ -306,16 +304,16 @@ internal void gui_view_update(GUI_View *view) {
         }
 
         if (ui_scroll(signal)) {
-            gui_editor->scroll_pt -= editor->face->glyph_height * signal.scroll.y;
+            gui_editor->scroll_pt -= editor->font->glyph_height * signal.scroll.y;
         }
 
         if (ui_dragging(signal)) {
             v2 mouse = ui_mouse();
             if (mouse.y <= code_body->rect.y0) {
-                gui_editor->scroll_pt -= editor->face->glyph_height;
+                gui_editor->scroll_pt -= editor->font->glyph_height;
             }
             if (mouse.y >= code_body->rect.y1) {
-                gui_editor->scroll_pt += editor->face->glyph_height;
+                gui_editor->scroll_pt += editor->font->glyph_height;
             }
             Cursor cursor = editor_mouse_to_cursor(gui_editor, ui_mouse());
             editor_set_cursor(editor, cursor);

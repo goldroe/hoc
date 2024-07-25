@@ -7,7 +7,7 @@ struct Hoc_Editor {
     Hoc_Editor *next;
     Hoc_Buffer *buffer;
 
-    Face *face;
+    Face *font;
     Cursor cursor;
     b32 mark_active;
     Cursor mark;

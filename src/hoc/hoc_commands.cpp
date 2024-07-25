@@ -1,45 +1,3 @@
-// @todo add options for adjusting editor focus (top, center, bottom)
-// void ensure_cursor_in_editor(Editor *editor, Cursor cursor) {
-//     f32 cursor_top = cursor.line * editor->face->glyph_height - editor->editor_offset.y;
-//     f32 cursor_bottom = cursor_top + editor->face->glyph_height;
-//     if (cursor_top < 0) {
-//         editor->editor_offset.y += (int)cursor_top;
-//     } else if (cursor_bottom >= rect_height(editor->rect)) {
-//         f32 d = cursor_bottom - rect_height(editor->rect);
-//         editor->editor_offset.yset.y += d;
-//     }
-// }
-
-internal void editor_set_cursor(Hoc_Editor *editor, Cursor cursor) {
-    // ensure_cursor_in_editor(editor, cursor);
-    editor->cursor = cursor;
-}
-
-internal void editor_move_lines(Hoc_Editor *editor, s64 lines) {
-    s64 line = editor->cursor.line + lines;
-    line = Clamp(line, 0, buffer_get_line_count(editor->buffer) - 1);
-    Cursor cursor = get_cursor_from_line(editor->buffer, line);
-    editor_set_cursor(editor, cursor);
-}
-
-internal void write_buffer(Hoc_Buffer *buffer) {
-    // String8 buffer_string = buffer_to_string_apply_line_endings(buffer);
-    Arena *arena = make_arena(get_malloc_allocator());
-    String8 buffer_string = buffer_to_string(arena, buffer);
-    OS_Handle file_handle = os_open_file(buffer->file_name, OS_ACCESS_WRITE);
-    if (os_valid_handle(file_handle)) {
-        os_write_file(file_handle, buffer_string.data, buffer_string.count);
-        os_close_handle(file_handle);
-        buffer->edited = false;
-    } else {
-        printf("Could not open file '%s'\n", buffer->file_name.data);
-    }
-    arena_release(arena);
-}
-
-HOC_COMMAND(nil_command) {
-}
-
 HOC_COMMAND(self_insert) {
     Assert(view->type == GUI_VIEW_EDITOR);
     GUI_Editor *gui_editor = &view->editor;
@@ -59,7 +17,6 @@ HOC_COMMAND(self_insert) {
         }
         // if (editor->buffer->post_self_insert_hook) editor->buffer->post_self_insert_hook(text_input);
     }
-    editor->modified = true;
 }
 
 HOC_COMMAND(quit_hoc) {
@@ -212,7 +169,7 @@ HOC_COMMAND(page_up) {
     s64 prev_line = editor->cursor.line;
     editor_move_lines(editor, -20);
     s64 lines_moved = editor->cursor.line - prev_line;
-    gui_editor->scroll_pt += lines_moved * editor->face->glyph_height;
+    gui_editor->scroll_pt += lines_moved * editor->font->glyph_height;
     // gui_editor->box->view_offset_target.y = -editor->cursor.line * gui_editor->editor->face->glyph_height;
 }
 
@@ -222,7 +179,7 @@ HOC_COMMAND(page_down) {
     s64 prev_line = editor->cursor.line;
     editor_move_lines(editor, 20);
     s64 lines_moved = editor->cursor.line - prev_line;
-    gui_editor->scroll_pt += lines_moved * editor->face->glyph_height;
+    gui_editor->scroll_pt += lines_moved * editor->font->glyph_height;
     // gui_editor->box->view_offset_target.y = -editor->cursor.line * gui_editor->editor->face->glyph_height;
 }
 
@@ -344,7 +301,6 @@ HOC_COMMAND(save_buffer) {
     Assert(view->type == GUI_VIEW_EDITOR);
     Hoc_Editor *editor = view->editor.editor;
     write_buffer(editor->buffer);
-    editor->modified = false;
 }
 
 HOC_COMMAND(set_mark) {
@@ -413,4 +369,13 @@ HOC_COMMAND(find_file) {
     //@Note Initializes current path and sub-files
     String8 current_path = editor->buffer->file_path;
     gui_file_system_load_path(fs, current_path);
+}
+
+
+
+
+
+
+
+HOC_COMMAND(nil_command) {
 }

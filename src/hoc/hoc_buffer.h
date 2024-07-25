@@ -36,8 +36,8 @@ struct Hoc_Buffer {
     s64 gap_end;
     s64 end;
 
-    bool edited;
-
+    b32 modified;
+    
     Line_Ending line_ending;
     Auto_Array<s64> line_starts;
 };

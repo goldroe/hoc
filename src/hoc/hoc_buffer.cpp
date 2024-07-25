@@ -6,6 +6,25 @@
 #define GAP_SIZE(Buffer) (Buffer->gap_end - Buffer->gap_start)
 #define BUFFER_SIZE(Buffer) (Buffer->end - GAP_SIZE(Buffer))
 
+internal void modify_buffer(Hoc_Buffer *buffer) {
+    buffer->modified = true;
+}
+
+internal void write_buffer(Hoc_Buffer *buffer) {
+    // String8 buffer_string = buffer_to_string_apply_line_endings(buffer);
+    Arena *arena = make_arena(get_malloc_allocator());
+    String8 buffer_string = buffer_to_string(arena, buffer);
+    OS_Handle file_handle = os_open_file(buffer->file_name, OS_ACCESS_WRITE);
+    if (os_valid_handle(file_handle)) {
+        os_write_file(file_handle, buffer_string.data, buffer_string.count);
+        os_close_handle(file_handle);
+    } else {
+        printf("Could not open file '%s'\n", buffer->file_name.data);
+    }
+    arena_release(arena);
+    buffer->modified = false;
+}
+
 internal String8 buffer_to_string(Arena *arena, Hoc_Buffer *buffer) {
     s64 buffer_length = buffer_get_length(buffer);
     String8 result{};
@@ -288,8 +307,7 @@ internal void buffer_delete_region(Hoc_Buffer *buffer, s64 start, s64 end) {
     }
     buffer->gap_end += (end - start);
     buffer_update_line_starts(buffer);
-
-    buffer->edited = true;
+    modify_buffer(buffer);
 }
 
 internal void buffer_delete_single(Hoc_Buffer *buffer, s64 position) {
@@ -304,6 +322,7 @@ internal void buffer_insert_single(Hoc_Buffer *buffer, s64 position, u8 c) {
     buffer->text[position] = c;
     buffer->gap_start++;
     buffer_update_line_starts(buffer);
+    modify_buffer(buffer);
 }
 
 internal void buffer_insert_string(Hoc_Buffer *buffer, s64 position, String8 string) {
@@ -316,8 +335,7 @@ internal void buffer_insert_string(Hoc_Buffer *buffer, s64 position, String8 str
     MemoryCopy(buffer->text + position, string.data, string.count);
     buffer->gap_start += string.count;
     buffer_update_line_starts(buffer);
-
-    buffer->edited = true;
+    modify_buffer(buffer);
 }
 
 internal void buffer_replace_region(Hoc_Buffer *buffer, String8 string, s64 start, s64 end) {
@@ -329,8 +347,7 @@ internal void buffer_replace_region(Hoc_Buffer *buffer, String8 string, s64 star
     memcpy(buffer->text + buffer->gap_start, string.data, string.count);
     buffer->gap_start += string.count;
     buffer_update_line_starts(buffer);
-
-    buffer->edited = true;
+    modify_buffer(buffer);
 }
 
 internal void buffer_clear(Hoc_Buffer *buffer) {
