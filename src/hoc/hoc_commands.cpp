@@ -169,7 +169,7 @@ HOC_COMMAND(page_up) {
     s64 prev_line = editor->cursor.line;
     editor_move_lines(editor, -20);
     s64 lines_moved = editor->cursor.line - prev_line;
-    gui_editor->scroll_pt += lines_moved * editor->font->glyph_height;
+    view->scroll_pos.y.idx += lines_moved;
     // gui_editor->box->view_offset_target.y = -editor->cursor.line * gui_editor->editor->face->glyph_height;
 }
 
@@ -179,7 +179,7 @@ HOC_COMMAND(page_down) {
     s64 prev_line = editor->cursor.line;
     editor_move_lines(editor, 20);
     s64 lines_moved = editor->cursor.line - prev_line;
-    gui_editor->scroll_pt += lines_moved * editor->font->glyph_height;
+    view->scroll_pos.y.idx += lines_moved;
     // gui_editor->box->view_offset_target.y = -editor->cursor.line * gui_editor->editor->face->glyph_height;
 }
 

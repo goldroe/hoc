@@ -716,11 +716,14 @@ internal void ui_set_next_font(Face *v) { UI_StackSetNext(ui_state, Font, font, 
 internal void ui_set_next_parent(UI_Box *v) { UI_StackSetNext(ui_state, Parent, parent, UI_Box, v); }
 internal void ui_set_next_fixed_x(f32 v) { UI_StackSetNext(ui_state, FixedX, fixed_x, f32, v); }
 internal void ui_set_next_fixed_y(f32 v) { UI_StackSetNext(ui_state, FixedY, fixed_y, f32, v); }
+internal void ui_set_next_fixed_xy(Axis2 axis,f32 v) { ((axis==AXIS_X) ? ui_set_next_fixed_x : ui_set_next_fixed_y)(v); };
 internal void ui_set_next_fixed_width(f32 v) { UI_StackSetNext(ui_state, FixedWidth, fixed_width, f32, v); }
 internal void ui_set_next_fixed_height(f32 v) { UI_StackSetNext(ui_state, FixedHeight, fixed_height, f32, v); }
+internal void ui_set_next_fixed_size(Axis2 axis,f32 v) { ((axis==AXIS_X) ? ui_set_next_fixed_width : ui_set_next_fixed_height)(v); };
 internal void ui_set_next_pref_width(UI_Size v) { UI_StackSetNext(ui_state, PrefWidth, pref_width, UI_Size, v); }
 internal void ui_set_next_pref_height(UI_Size v) { UI_StackSetNext(ui_state, PrefHeight, pref_height, UI_Size, v); }
-internal void ui_set_next_child_layout(Axis2 v) { UI_StackSetNext(ui_state, ChildLayoutAxis, child_layout_axis, Axis2, v); }
+internal void ui_set_next_pref_size(Axis2 axis, UI_Size size) { ((axis == AXIS_X) ? ui_set_next_pref_width : ui_set_next_pref_height)(size); }
+internal void ui_set_next_child_layout_axis(Axis2 v) { UI_StackSetNext(ui_state, ChildLayoutAxis, child_layout_axis, Axis2, v); }
 internal void ui_set_next_text_alignment(UI_Text_Align v) { UI_StackSetNext(ui_state, TextAlignment, text_alignment, UI_Text_Alignment, v); }
 internal void ui_set_next_background_color(v4 v) { UI_StackSetNext(ui_state, BackgroundColor, background_color, v4, v); }
 internal void ui_set_next_border_color(v4 v) { UI_StackSetNext(ui_state, BorderColor, border_color, v4, v); }
@@ -735,6 +738,7 @@ internal void ui_push_fixed_width(f32 v) { UI_StackPush(ui_state, FixedWidth, fi
 internal void ui_push_fixed_height(f32 v) { UI_StackPush(ui_state, FixedHeight, fixed_height, f32, v); }
 internal void ui_push_pref_width(UI_Size v) { UI_StackPush(ui_state, PrefWidth, pref_width, UI_Size, v); }
 internal void ui_push_pref_height(UI_Size v) { UI_StackPush(ui_state, PrefHeight, pref_height, UI_Size, v); }
+internal void ui_push_pref_size(Axis2 axis, UI_Size size) { ((axis == AXIS_X) ? ui_push_pref_width : ui_push_pref_height)(size); }
 internal void ui_push_child_layout_axis(Axis2 v) { UI_StackPush(ui_state, ChildLayoutAxis, child_layout_axis, Axis2, v); }
 internal void ui_push_text_alignment(UI_Text_Align v) { UI_StackPush(ui_state, TextAlignment, text_alignment, UI_Text_Alignment, v); }
 internal void ui_push_background_color(v4 v) { UI_StackPush(ui_state, BackgroundColor, background_color, v4, v); }
@@ -750,6 +754,7 @@ internal void ui_pop_fixed_width() { UI_StackPop(ui_state, FixedWidth, fixed_wid
 internal void ui_pop_fixed_height() { UI_StackPop(ui_state, FixedHeight, fixed_height); }
 internal void ui_pop_pref_width() { UI_StackPop(ui_state, PrefWidth, pref_width); }
 internal void ui_pop_pref_height() { UI_StackPop(ui_state, PrefHeight, pref_height); }
+internal void ui_pop_pref_size(Axis2 axis) { ((axis == AXIS_X) ? ui_pop_pref_width : ui_pop_pref_height)(); }
 internal void ui_pop_child_layout_axis() { UI_StackPop(ui_state, ChildLayoutAxis, child_layout_axis); }
 internal void ui_pop_text_alignment() { UI_StackPop(ui_state, TextAlignment, text_alignment); }
 internal void ui_pop_background_color() { UI_StackPop(ui_state, BackgroundColor, background_color); }

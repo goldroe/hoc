@@ -11,7 +11,6 @@ struct GUI_Editor {
     Hoc_Editor *editor;
     UI_Box *box;
     String8 active_text_input;
-    f32 scroll_pt;
 };
 
 struct GUI_File_System {
@@ -35,6 +34,9 @@ struct GUI_View {
     GUI_View_Type type;
     Key_Map *key_map;
     b32 to_be_destroyed;
+
+    UI_Scroll_Pos scroll_pos;
+    
     union {
         GUI_Editor editor;
         GUI_File_System fs;

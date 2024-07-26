@@ -307,7 +307,7 @@ internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handl
     ui_begin_build(dt, window_handle, os_events);
 
     v2 window_dim = os_get_window_dim(window_handle);
-    ui_set_next_child_layout(AXIS_X);
+    ui_set_next_child_layout_axis(AXIS_X);
     ui_set_next_pref_width(ui_px(window_dim.x, 1.f));
     ui_set_next_pref_height(ui_px(window_dim.y, 1.f));
     UI_Box *main_body = ui_make_box_from_string(UI_BOX_NIL, str8_lit("main_code_body"));
