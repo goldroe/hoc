@@ -17,6 +17,16 @@ struct UI_Size {
     f32 strictness = 1.0f;
 };
 
+struct UI_Scroll_Pt {
+    s64 idx;
+    f32 off;
+};
+
+struct UI_Scroll_Pos {
+    UI_Scroll_Pt x;
+    UI_Scroll_Pt y;
+};
+
 enum UI_Text_Align {
     UI_TEXT_ALIGN_CENTER,
     UI_TEXT_ALIGN_LEFT,
@@ -245,7 +255,8 @@ internal void ui_set_next_fixed_width(f32 v);
 internal void ui_set_next_fixed_height(f32 v);
 internal void ui_set_next_pref_width(UI_Size v);
 internal void ui_set_next_pref_height(UI_Size v);
-internal void ui_set_next_child_layout(Axis2 v);
+internal void ui_set_next_pref_size(Axis2 axis, UI_Size size);
+internal void ui_set_next_child_layout_axis(Axis2 v);
 internal void ui_set_next_text_alignment(UI_Text_Align v);
 internal void ui_set_next_background_color(v4 v);
 internal void ui_set_next_border_color(v4 v);
@@ -260,6 +271,7 @@ internal void ui_push_fixed_width(f32 v);
 internal void ui_push_fixed_height(f32 v);
 internal void ui_push_pref_width(UI_Size v);
 internal void ui_push_pref_height(UI_Size v);
+internal void ui_push_pref_size(Axis2 axis, UI_Size size);
 internal void ui_push_child_layout_axis(Axis2 v);
 internal void ui_push_text_alignment(UI_Text_Align v);
 internal void ui_push_background_color(v4 v);
@@ -275,6 +287,7 @@ internal void ui_pop_fixed_width();
 internal void ui_pop_fixed_height();
 internal void ui_pop_pref_width();
 internal void ui_pop_pref_height();
+internal void ui_pop_pref_size(Axis2 axis, UI_Size size);
 internal void ui_pop_child_layout_axis();
 internal void ui_pop_text_alignment();
 internal void ui_pop_background_color();
@@ -308,6 +321,7 @@ internal UI_Size ui_size(UI_Size_Type type, f32 value, f32 strictness);
 #define UI_TextAlignment(align) DeferLoop(ui_push_text_alignment(align), ui_pop_text_alignment())
 #define UI_PrefWidth(pref_width) DeferLoop(ui_push_pref_width(pref_width), ui_pop_pref_width())
 #define UI_PrefHeight(pref_height) DeferLoop(ui_push_pref_height(pref_height), ui_pop_pref_height())
+#define UI_PrefSize(axis,pref_size) DeferLoop(ui_push_pref_size(axis,pref_size), ui_pop_pref_size(axis))
 #define UI_FixedWidth(fixed_width) DeferLoop(ui_push_fixed_width(fixed_width), ui_pop_fixed_width())
 #define UI_FixedHeight(fixed_height) DeferLoop(ui_push_fixed_height(fixed_height), ui_pop_fixed_height())
 #define UI_FixedX(fixed_x) DeferLoop(ui_push_fixed_x(fixed_x), ui_pop_fixed_x())

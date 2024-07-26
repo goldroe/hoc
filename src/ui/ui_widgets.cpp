@@ -1,6 +1,3 @@
-#include "ui_core.h"
-#include "ui_widgets.h"
-
 internal UI_Signal ui_label(String8 string) {
     UI_Box *box = ui_make_box_from_string(UI_BOX_DRAW_TEXT, string);
     return ui_signal_from_box(box);
@@ -15,7 +12,7 @@ internal UI_Signal ui_labelf(const char *fmt, ...) {
 }
 
 internal UI_Signal ui_button(String8 string) {
-    UI_Box *box = ui_make_box_from_string(UI_BOX_CLICKABLE | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_BORDER | UI_BOX_DRAW_TEXT | UI_BOX_DRAW_HOT_EFFECTS | UI_BOX_DRAW_ACTIVE_EFFECTS, string);
+    UI_Box *box = ui_make_box_from_string(UI_BOX_CLICKABLE | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT | UI_BOX_DRAW_HOT_EFFECTS | UI_BOX_DRAW_ACTIVE_EFFECTS, string);
     return ui_signal_from_box(box);
 }
 
@@ -101,43 +98,58 @@ internal UI_Signal ui_line_edit(String8 name, void *buffer, u64 max_buffer_capac
     return signal;
 }
 
-struct UI_Scroll_Bar_Draw {
-    Axis2 axis;
-    f32 thumb_position;
-    f32 view_bounds;
-};
+internal UI_Scroll_Pt ui_scroll_bar(String8 name, Axis2 axis, UI_Scroll_Pt scroll_pt, Rng_S64 view_rng, s64 view_indices) {
+    UI_Scroll_Pt new_pt = scroll_pt;
+    Axis2 flip_axis = axis_flip(axis);
 
-internal UI_BOX_CUSTOM_DRAW_PROC(ui_draw_scroll_bar) {
-    UI_Scroll_Bar_Draw *draw_data = (UI_Scroll_Bar_Draw *)user_data;
-    draw_rect(box->rect, box->background_color);
-    Axis2 axis = draw_data->axis;
+    s64 scroll_indices = view_indices + rng_s64_len(view_rng);
+    f32 scroll_ratio = (f32)rng_s64_len(view_rng) / (f32)scroll_indices;
+    
+    ui_set_next_pref_size(axis, ui_pct(1.f, 0.f));
+    ui_set_next_pref_size(flip_axis, ui_px(20.f, 1.f));
+    ui_set_next_child_layout_axis(axis);
+    UI_Box *container = ui_make_box_from_stringf(UI_BOX_DRAW_BACKGROUND, "###container_%s", name.data);
+    UI_Parent(container) {
+        UI_PrefSize(flip_axis, ui_pct(1.f, 0.f)) {
+            ui_set_next_pref_size(axis, ui_text_dim(0.f, 1.f));
+            UI_Signal top_sig = ui_button(str8_lit("<###top_arrow"));
+            if (ui_clicked(top_sig) || ui_dragging(top_sig)) {
+                new_pt.idx -= 1;
+            }
 
-    v2 scroll_bar_dim = rect_dim(box->rect);
-    f32 view_ratio =  scroll_bar_dim[axis] / draw_data->view_bounds;
+            ui_set_next_pref_size(axis, ui_pct(1.f, 0.f));
+            ui_set_next_pref_size(flip_axis, ui_pct(1.f, 1.f));
+            ui_set_next_background_color(V4(.24f, .25f, .25f, 1.f));
+            UI_Box *thumb_container = ui_make_box_from_stringf(UI_BOX_CLICKABLE | UI_BOX_DRAW_BACKGROUND, "###thumb_container", name.data);
+            v2 thumb_container_dim = rect_dim(thumb_container->rect);
+            
+            UI_Signal scroll_sig = ui_signal_from_box(thumb_container);
 
-    v2 thumb_position = box->rect.p0;
-    thumb_position[draw_data->axis] += draw_data->thumb_position * view_ratio;
-    v2 thumb_size = scroll_bar_dim;
-    thumb_size[axis] = scroll_bar_dim[axis] * view_ratio; 
+            if (ui_clicked(scroll_sig)) {
+                v2 scroll_pos = ui_mouse() - thumb_container->rect.p0;
+                new_pt.idx = (s64)(scroll_pos[axis] / (thumb_container_dim[axis] / (f32)view_indices));
+            }
 
-    Rect thumb_rect = make_rect(thumb_position.x, thumb_position.y, thumb_size.x, thumb_size.y);
+            f32 thumb_pos = thumb_container_dim[axis] * ((f32)scroll_pt.idx / (f32)scroll_indices);
+            ui_set_next_parent(thumb_container);
+            ui_set_next_fixed_xy(axis, thumb_pos);
+            ui_set_next_fixed_xy(flip_axis, 0.f);
+            ui_set_next_pref_size(axis, ui_pct(scroll_ratio, 0.f));
+            ui_set_next_background_color(V4(.4f, .4f, .4f, 1.f));
+            UI_Box *thumb_box = ui_make_box_from_stringf(UI_BOX_CLICKABLE | UI_BOX_DRAW_BACKGROUND, "###thumb", name.data);
+            UI_Signal thumb_sig = ui_signal_from_box(thumb_box);
 
-    draw_rect(thumb_rect, V4(.65f, .65f, .65f, 1.f));
+            ui_set_next_pref_size(axis, ui_text_dim(0.f, 1.f));
+            UI_Signal bottom_sig = ui_button(str8_lit(">###bottom_arrow"));
+            if (ui_clicked(bottom_sig) || ui_dragging(bottom_sig)) {
+                new_pt.idx += 1;
+            }
+        }
+    }
+
+    return new_pt;
 }
 
-internal UI_Signal ui_scroll_bar(String8 name, Axis2 axis, f32 scroll_pt, f32 view_bounds) {
-    ui_set_next_fixed_width(20.f);
-    ui_set_next_pref_height(ui_pct(1.f, 0.f));
-    UI_Box *scroll_bar = ui_make_box_from_stringf(UI_BOX_CLICKABLE | UI_BOX_DRAW_BACKGROUND, "scroll_bar_%s", name.data);
-    UI_Signal signal = ui_signal_from_box(scroll_bar);
-
-    UI_Scroll_Bar_Draw *draw_data = push_array(ui_build_arena(), UI_Scroll_Bar_Draw, 1);
-    draw_data->axis = axis;
-    draw_data->thumb_position = scroll_pt;
-    draw_data->view_bounds = view_bounds;
-    ui_set_custom_draw(scroll_bar, ui_draw_scroll_bar, draw_data);
-    return signal;
-}
 
 #if 0
 internal void ui_slider(String8 name, f32 *value, f32 min, f32 max) {
@@ -198,10 +210,10 @@ internal void ui_slider(String8 name, f32 *value, f32 min, f32 max) {
 #endif
 
 internal UI_Signal ui_directory_list(String8 directory) {
-    ui_set_next_child_layout(AXIS_Y);
+    ui_set_next_child_layout_axis(AXIS_Y);
     UI_Signal signal = ui_button(directory);
     UI_Parent(signal.box)
-    UI_PrefWidth(ui_pct(1.0f, 1.0f)) UI_PrefHeight(ui_text_dim(0.0f, 1.0f)) {
+    UI_PrefWidth(ui_pct(1.0f, 1.0f)) UI_PrefHeight(ui_text_dim(0.f, 1.f)) {
         OS_File file;
         OS_Handle find_handle = os_find_first_file(ui_build_arena(), directory, &file);
         if (find_handle) {
@@ -220,7 +232,7 @@ internal UI_Signal ui_directory_list(String8 directory) {
 internal void ui_row_begin(String8 name) {
     ui_set_next_pref_width(ui_pct(1.0f, 1.0f));
     ui_set_next_pref_height(ui_children_sum(1.0f));
-    ui_set_next_child_layout(AXIS_X);
+    ui_set_next_child_layout_axis(AXIS_X);
     UI_Box *row = ui_make_box_from_string(UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_BORDER, name);
     ui_push_parent(row);
 }
