@@ -50,7 +50,6 @@ internal Arena *arena_alloc(Base_Allocator *allocator, u64 size) {
     size += ARENA_HEADER_SIZE;
     // size = AlignForward(size, 8);
     void *memory = allocator->commit_procedure(size);
-    MemoryZero(memory, size);
     Arena *arena = (Arena *)memory;
     if (arena) {
         arena->prev = nullptr;
@@ -84,7 +83,6 @@ internal void *arena_push(Arena *arena, u64 size) {
     }
 
     void *memory = (void *)((u8 *)arena->current + new_pos);
-    MemoryZero(memory, size);
     arena->current->pos = new_pos + size;
     return memory;
 }

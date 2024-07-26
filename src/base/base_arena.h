@@ -32,6 +32,7 @@ internal void *arena_push(Arena *arena, u64 size);
 internal void arena_clear(Arena *arena);
 internal void arena_pop_to(Arena *arena, u64 pos);
 
-#define push_array(arena, type, count) (type*)arena_push((arena), sizeof(type) * (count))
+#define push_array(arena, type, count) (type*)MemoryZero((arena_push((arena), sizeof(type) * (count))), sizeof(type)*(count))
+#define push_array_no_zero(arena, type, count) (type*)arena_push((arena), sizeof(type) * (count))
 
 #endif // BASE_ARENA_H
