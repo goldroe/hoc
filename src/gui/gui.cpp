@@ -44,9 +44,22 @@ internal void destroy_gui_view(GUI_View *view) {
     view->to_be_destroyed = true;
 }
 
+// @todo add options for adjusting editor focus (top, center, bottom)
+void ensure_cursor_in_view(GUI_View *view, Cursor cursor) {
+    GUI_Editor *ged = &view->editor;
+    v2 code_area_dim = rect_dim(ged->box->rect);
+    s64 line_count = buffer_get_line_count(ged->editor->buffer);
+    s64 viewable_lines = (s64)ceil(code_area_dim.y / ged->box->font->glyph_height);
+    Rng_S64 view_rng = rng_s64(view->scroll_pos.y.idx, view->scroll_pos.y.idx + viewable_lines);
+    UI_Scroll_Pt new_pt = view->scroll_pos.y;
+    if (cursor.line < view_rng.min || cursor.line >= view_rng.max) {
+        new_pt.idx = cursor.line - (viewable_lines / 2);
+    }
+    view->scroll_pos.y = new_pt;
+}
+
 internal void gui_editor_open_file(GUI_Editor *editor, String8 file_name) {
     editor->editor->buffer = make_buffer(file_name);
-    // editor->scroll_pt = 0.f;
 }
 
 internal Cursor editor_mouse_to_cursor(GUI_Editor *gui_editor, v2 mouse) {
@@ -78,70 +91,88 @@ internal u16 os_key_to_key_mapping(OS_Key key, OS_Event_Flags modifiers) {
 }
 
 struct Editor_Draw_Data {
-    Hoc_Editor *editor;
+    GUI_View *view;
+    GUI_Editor *editor;
 };
 
 internal UI_BOX_CUSTOM_DRAW_PROC(draw_gui_editor) {
     Editor_Draw_Data *draw_data = (Editor_Draw_Data *)user_data;
-    Hoc_Editor *editor = draw_data->editor;
-    String8 string_before_cursor = box->string;
-    string_before_cursor.count = editor->cursor.position;
-
+    GUI_View *view = draw_data->view;
+    GUI_Editor *ged = draw_data->editor;
+    Hoc_Editor *editor = ged->editor;
     Face *font = box->font;
 
-    // Draw_Clip(box->rect) {
-        draw_rect(box->rect, box->background_color);
+    v2 code_area_dim = rect_dim(ged->box->rect);
+    s64 line_count = buffer_get_line_count(editor->buffer);
+    s64 viewable_lines = (s64)ceil(code_area_dim.y / font->glyph_height);
+    Rng_S64 view_rng = rng_s64(view->scroll_pos.y.idx, view->scroll_pos.y.idx + viewable_lines);
 
-        v2 text_position = ui_text_position(box);
-        text_position += box->view_offset;
+    String8 string_before_cursor = box->string;
+    string_before_cursor.count = editor->cursor.position;
+    v2 cursor_pos = box->rect.p0 + measure_string_size(string_before_cursor, font) + box->view_offset;
 
-        //@Note draw selection
-        if (editor->mark_active) {
-            v2 p0 = box->rect.p0 + box->view_offset;
+    draw_rect(box->rect, box->background_color);
 
-            Cursor c0 = editor->cursor;
-            Cursor c1 = editor->mark;
-            if (c1.position < c0.position) {
-                Swap(Cursor, c0, c1);
+    v2 text_position = ui_text_position(box);
+    text_position += box->view_offset;
+
+    Rect line_rect = make_rect(box->rect.x0, cursor_pos.y, rect_width(box->rect), font->glyph_height);
+    draw_rect(line_rect, V4(.24f, .22f, .21f, 1.f));
+
+    if (ged->searching) {
+        for (int i = 0; i < ged->search_matches.count; i++) {
+            Rng_S64 match = ged->search_matches[i];
+            String8 match_str = str8(box->string.data + match.min, rng_s64_len(match));
+            Cursor match_cursor = get_cursor_from_position(editor->buffer, match.min);
+            s64 line_position = get_position_from_line(editor->buffer, match_cursor.line);
+            f32 start = get_string_width(str8(box->string.data + line_position, match_cursor.col), font);
+            
+            Rect match_rect = make_rect(start, match_cursor.line * font->glyph_height + ged->box->view_offset.y, get_string_width(match_str, font), font->glyph_height);
+            draw_rect(match_rect, V4(1.f, 1.f, 1.f, .2f));
+        }
+    }
+    
+    //@Note draw selection
+    if (editor->mark_active) {
+        v2 p0 = box->rect.p0 + box->view_offset;
+
+        Cursor c0 = editor->cursor;
+        Cursor c1 = editor->mark;
+        if (c1.position < c0.position) {
+            Swap(Cursor, c0, c1);
+        }
+
+        for (s64 line = c0.line; line <= c1.line; line += 1) {
+            s64 start = 0;
+            s64 end = buffer_get_line_length(editor->buffer, line);
+            if (line == c0.line) {
+                start = c0.col;
+            }
+            if (line == c1.line) {
+                end = c1.col;
             }
 
-            for (s64 line = c0.line; line <= c1.line; line += 1) {
-                s64 start = 0;
-                s64 end = buffer_get_line_length(editor->buffer, line);
-                if (line == c0.line) {
-                    start = c0.col;
-                }
-                if (line == c1.line) {
-                    end = c1.col;
-                }
+            v2 p = p0;
+            p.x += start * font->glyph_width;
+            p.y += line * font->glyph_height;
 
-                v2 p = p0;
-                p.x += start * font->glyph_width;
-                p.y += line * font->glyph_height;
+            String8 line_string = str8_jump(box->string, get_position_from_line(editor->buffer, line) + start);
+            line_string.count = end - start;
 
-                String8 line_string = str8_jump(box->string, get_position_from_line(editor->buffer, line) + start);
-                line_string.count = end - start;
-
-                f32 width = get_string_width(line_string, font);
-                if (line_string.count == 0) width = font->glyph_width;
-                f32 height = font->glyph_height;
-                Rect rect = make_rect(p.x, p.y, width, height);
-                draw_rect(rect, V4(.13f, .26f, .51f, 1.f));
-            }
+            f32 width = get_string_width(line_string, font);
+            if (line_string.count == 0) width = font->glyph_width;
+            f32 height = font->glyph_height;
+            Rect rect = make_rect(p.x, p.y, width, height);
+            draw_rect(rect, V4(.13f, .26f, .51f, 1.f));
         }
-        draw_string_truncated(box->string, font, box->text_color, text_position, box->rect);
+    }
+    draw_string_truncated(box->string, font, box->text_color, text_position, box->rect);
 
-        v2 cursor_pos = box->rect.p0 + measure_string_size(string_before_cursor, font) + box->view_offset;
-        Rect cursor_rect = make_rect(cursor_pos.x, cursor_pos.y, 1.f, font->glyph_height);
-        v4 cursor_color = box->text_color;
-        // cursor_color *= (1.f - editor->cursor_dt);
-        // editor->cursor_dt += ui_animation_dt();
-        // editor->cursor_dt = ClampBot(editor->cursor_dt, 0.f);
-        if (ui_key_match(box->key, ui_state->focus_active_box_key)) {
-            cursor_rect.x1 += 1.f;
-        }
-        draw_rect(cursor_rect, cursor_color);
-    // }
+    f32 cursor_thickness = 2.f;
+    cursor_thickness = get_string_width(str8(box->string.data + editor->cursor.position, 1), font);
+    Rect cursor_rect = make_rect(cursor_pos.x, cursor_pos.y, cursor_thickness, font->glyph_height);
+    v4 cursor_color = V4(.92f, .86f, .7f, 1.f);
+    draw_rect(cursor_rect, cursor_color);
 }
 
 int fs_sort_compare__file_name(const void *arg1, const void *arg2) {
@@ -221,6 +252,7 @@ internal void gui_view_update(GUI_View *view) {
     {
         GUI_Editor *gui_editor = &view->editor;
         Hoc_Editor *editor = gui_editor->editor;
+        Hoc_Buffer *buffer = editor->buffer;
 
         String8 file_name = editor->buffer->file_name;
 
@@ -249,13 +281,10 @@ internal void gui_view_update(GUI_View *view) {
                 ui_set_next_pref_width(ui_pct(1.f, 0.f));
                 ui_set_next_pref_height(ui_pct(1.f, 0.f));
                 ui_set_next_font(editor->font);
-                ui_set_next_cursor(OS_CURSOR_IBEAM);
+                ui_set_next_hover_cursor(OS_CURSOR_IBEAM);
                 code_body = ui_make_box_from_stringf(UI_BOX_CLICKABLE | UI_BOX_KEYBOARD_CLICKABLE | UI_BOX_SCROLL | UI_BOX_DRAW_BACKGROUND, "code_view_%d", view->id);
                 signal = ui_signal_from_box(code_body);
 
-                ui_set_next_background_color(V4(.18f, .18f, .18f, 1.f));
-                view->scroll_pos.x = ui_scroll_bar(str8_lit("scroll_bar"), AXIS_X, view->scroll_pos.x, rng_s64(0, 200), 500);
-                
                 //@Note File bar
                 ui_set_next_pref_width(ui_pct(1.f, 1.f));
                 ui_set_next_pref_height(ui_text_dim(2.f, 1.f));
@@ -282,22 +311,90 @@ internal void gui_view_update(GUI_View *view) {
                     int hour, minute, second;
                     os_local_time(&hour, &minute, &second);
                     ui_labelf("%d:%02d", hour, minute);
+
+                    ui_labelf(" %s", buffer->line_end==LINE_ENDING_CRLF ? "crlf" : "lf");
                 }
             }
 
             v2 code_area_dim = rect_dim(code_body->rect);
+
+            if (gui_editor->searching) {
+                ui_set_next_parent(editor_body);
+                ui_set_next_fixed_x(code_area_dim.x/2.f);
+                ui_set_next_fixed_y(0.f);
+                ui_set_next_pref_width(ui_px(code_area_dim.x / 2.f, 1.f));
+                ui_set_next_pref_height(ui_px(code_body->font->glyph_height * 1.5f, 1.f));
+                ui_set_next_background_color(V4(.16f, .16f, .16f, 1.f));
+                ui_set_next_child_layout_axis(AXIS_X);
+                UI_Box *search_container = ui_make_box_from_string(UI_BOX_DRAW_BACKGROUND, str8_lit("search_container"));
+
+                UI_Signal search_sig{};
+                UI_Parent(search_container) {
+                    ui_set_next_pref_width(ui_text_dim(2.f, 1.f));
+                    ui_set_next_pref_height(ui_text_dim(2.f, 1.f));
+                    ui_set_next_background_color(V4(.16f, .16f, .16f, 1.f));
+                    ui_make_box_from_string(UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_TEXT, str8_lit("Find Text  "));
+
+                    ui_set_next_pref_width(ui_pct(1.f, 0.f));
+                    ui_set_next_pref_height(ui_px(code_body->font->glyph_height, 1.f));
+                    ui_set_next_background_color(V4(.16f, .16f, .16f, 1.f));
+                    search_sig = ui_line_edit(str8_lit("search_line"), gui_editor->search_buffer, 2048, &gui_editor->search_pos, &gui_editor->search_len);
+
+                    ui_set_next_pref_width(ui_text_dim(2.f, 1.f));
+                    ui_set_next_pref_height(ui_text_dim(2.f, 1.f));
+                    ui_set_next_background_color(V4(.16f, .16f, .16f, 1.f));
+                    ui_labelf("%d matches", gui_editor->search_matches.count);
+                }
+
+                if (ui_pressed(search_sig)) {
+                    if (search_sig.key == OS_KEY_ESCAPE) {
+                        gui_editor->searching = false;
+                        editor_set_cursor(editor, gui_editor->search_cursor);
+                        ensure_cursor_in_view(view, gui_editor->search_cursor);
+                        // ui_set_focus_active_key(gui_editor->box->key);
+                    } else if (search_sig.key == OS_KEY_UP || search_sig.key == OS_KEY_DOWN) {
+                        bool next = search_sig.key == OS_KEY_DOWN;
+                        int match_idx = gui_editor->match_idx + (next ? 1 : -1);
+                        //@Note wrap
+                        if (match_idx < 0) {
+                            match_idx = (int)gui_editor->search_matches.count - 1;
+                        } else if (match_idx >= gui_editor->search_matches.count) {
+                            match_idx = 0;
+                        }
+
+                        if (gui_editor->search_matches.count > 0) {
+                            Rng_S64 match = gui_editor->search_matches[match_idx];
+                            Cursor cursor = get_cursor_from_position(editor->buffer, match.min);
+                            editor_set_cursor(editor, cursor);
+                            ensure_cursor_in_view(view, cursor);
+                        }
+                        gui_editor->match_idx = match_idx;
+                    } else if (search_sig.key == OS_KEY_ENTER) {
+                        gui_editor->searching = false;
+                        ui_set_focus_active_key(gui_editor->box->key);
+                    } else {
+                        String8 search_string = str8(gui_editor->search_buffer, gui_editor->search_len);
+                        gui_editor->search_matches.reset_count();
+                        gui_editor->search_matches = buffer_find_text_matches(editor->buffer, search_string);
+
+                        gui_editor->match_idx = 0;
+                        for (int i = 0; i < gui_editor->search_matches.count; i++) {
+                            Rng_S64 match = gui_editor->search_matches[i];
+                            if (match.min >= gui_editor->search_cursor.position) {
+                                gui_editor->match_idx = i;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
             s64 line_count = buffer_get_line_count(editor->buffer);
             s64 viewable_lines = (s64)ceil(code_area_dim.y / code_body->font->glyph_height);
             Rng_S64 view_rng = rng_s64(view->scroll_pos.y.idx, view->scroll_pos.y.idx + viewable_lines);
             ui_set_next_background_color(V4(.18f, .18f, .18f, 1.f));
-            view->scroll_pos.y = ui_scroll_bar(file_name, AXIS_Y, view->scroll_pos.y, view_rng, line_count);
+            view->scroll_pos.y = ui_scroll_bar(file_name, AXIS_Y, ui_px(editor->font->glyph_width, 1.f), view->scroll_pos.y, view_rng, line_count);
         }
-
-        view->scroll_pos.x.idx = ClampBot(view->scroll_pos.x.idx, 0);
-        view->scroll_pos.y.idx = ClampBot(view->scroll_pos.y.idx, 0);
-
-        code_body->view_offset_target.x = -view->scroll_pos.x.idx * code_body->font->glyph_width;
-        code_body->view_offset_target.y = -view->scroll_pos.y.idx * code_body->font->glyph_height;
 
         gui_editor->active_text_input = signal.text;
         gui_editor->box = code_body;
@@ -316,26 +413,34 @@ internal void gui_view_update(GUI_View *view) {
         }
 
         if (ui_scroll(signal)) {
-            view->scroll_pos.y.idx -= signal.scroll.y;
+            view->scroll_pos.y.idx -= 3 * signal.scroll.y;
         }
 
         if (ui_dragging(signal)) {
             v2 mouse = ui_mouse();
+            int line_dt = 3;
             if (mouse.y <= code_body->rect.y0) {
-                view->scroll_pos.y.idx -= 1;
+                view->scroll_pos.y.idx -= line_dt;
             }
             if (mouse.y >= code_body->rect.y1) {
-                view->scroll_pos.y.idx += 1;
+                view->scroll_pos.y.idx += line_dt;
             }
             Cursor cursor = editor_mouse_to_cursor(gui_editor, ui_mouse());
             editor_set_cursor(editor, cursor);
             editor->mark_active = editor->mark.position != editor->cursor.position;
         }
 
-        code_body->string = buffer_to_string(ui_build_arena(), editor->buffer); 
+        view->scroll_pos.x.idx = ClampBot(view->scroll_pos.x.idx, 0);
+        view->scroll_pos.y.idx = ClampBot(view->scroll_pos.y.idx, 0);
+
+        code_body->view_offset_target.x = -view->scroll_pos.x.idx * code_body->font->glyph_width;
+        code_body->view_offset_target.y = -view->scroll_pos.y.idx * code_body->font->glyph_height;
+
+        code_body->string = buffer_to_string(ui_build_arena(), editor->buffer, false); 
 
         Editor_Draw_Data *editor_draw_data = push_array(ui_build_arena(), Editor_Draw_Data, 1);
-        editor_draw_data->editor = editor;
+        editor_draw_data->view = view;
+        editor_draw_data->editor = gui_editor;
         ui_set_custom_draw(code_body, draw_gui_editor, editor_draw_data);
         break;
     }
@@ -362,7 +467,7 @@ internal void gui_view_update(GUI_View *view) {
         Arena *scratch = make_arena(get_malloc_allocator());
 
         UI_Parent(fs_container)
-            UI_TextAlignment(UI_TEXT_ALIGN_CENTER)
+            UI_TextAlignment(UI_TEXT_ALIGN_LEFT)
             UI_TextColor(V4(.8f, .73f, .59f, 1.f))
             UI_BackgroundColor(V4(.16f, .16f, .16f, 1.f))
             UI_BorderColor(V4(.2f, .2f, .2f, 1.f))
@@ -371,7 +476,7 @@ internal void gui_view_update(GUI_View *view) {
         {
             UI_Signal prompt_sig = ui_line_edit(str8_lit("fs_prompt_1"), fs->path_buffer, 2048, &fs->path_pos, &fs->path_len);
             String8 file_path = str8(fs->path_buffer, fs->path_len);
-            
+
             if (ui_pressed(prompt_sig)) {
                 if (prompt_sig.key == OS_KEY_SLASH || prompt_sig.key == OS_KEY_BACKSLASH) 
                     gui_file_system_load_path(fs, file_path);
@@ -387,10 +492,12 @@ internal void gui_view_update(GUI_View *view) {
                 if (os_file_exists(file_path)) {
                     gui_editor_open_file(current_editor, file_path);
                     destroy_gui_view(view);
+                    ui_set_focus_active_key(current_editor->box->key);
                 }
             }
             if (prompt_sig.key == OS_KEY_ESCAPE) {
                 destroy_gui_view(view);
+                ui_set_focus_active_key(current_editor->box->key);
             }
 
             UI_Signal back_sig = ui_button(str8_lit("*Previous Directory*"));
@@ -414,6 +521,7 @@ internal void gui_view_update(GUI_View *view) {
                     } else {
                         gui_editor_open_file(current_editor, new_path);
                         destroy_gui_view(view);
+                        // ui_set_focus_active_key(current_editor->box->key);
                     }
                 }
             }

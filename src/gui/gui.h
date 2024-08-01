@@ -11,6 +11,14 @@ struct GUI_Editor {
     Hoc_Editor *editor;
     UI_Box *box;
     String8 active_text_input;
+
+    b32 searching;
+    Cursor search_cursor;
+    u8 search_buffer[1024];
+    u64 search_len;
+    u64 search_pos;
+    Auto_Array<Rng_S64> search_matches;
+    int match_idx;
 };
 
 struct GUI_File_System {
@@ -36,6 +44,9 @@ struct GUI_View {
     b32 to_be_destroyed;
 
     UI_Scroll_Pos scroll_pos;
+    // u8 query_buffer[1024];
+    // u64 query_len;
+    // u64 query_pos;
     
     union {
         GUI_Editor editor;
