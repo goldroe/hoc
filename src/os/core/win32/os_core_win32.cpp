@@ -2,6 +2,7 @@
 
 global HCURSOR win32_hcursor;
 global OS_Key keycode_table[256];
+global s64 win32_performance_frequency;
 
 internal OS_Event_Flags os_event_flags() {
     OS_Event_Flags result = (OS_Event_Flags)0;
@@ -50,6 +51,17 @@ internal OS_Key os_key_from_vk(u32 vk) {
         }
     }
     return keycode_table[vk];
+}
+
+internal inline s64 get_wall_clock() {
+    LARGE_INTEGER result;
+    QueryPerformanceCounter(&result);
+    return (s64)result.QuadPart;
+}
+
+internal inline f32 get_ms_elapsed(s64 start, s64 end) {
+    f32 result = 1000.0f * ((f32)(end - start) / (f32)win32_performance_frequency);
+    return result;
 }
  
 internal bool os_chdir(String8 path) {
