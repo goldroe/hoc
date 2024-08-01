@@ -85,7 +85,7 @@ struct UI_Box {
     String8 string = str8_zero();
     UI_Box_Draw_Proc *custom_draw_proc;
     void *draw_data;
-    OS_Cursor cursor;
+    OS_Cursor hover_cursor;
 
     //@Note Persistent data
     v2 view_offset;
@@ -125,7 +125,7 @@ struct UI_Cursor_Node                  { UI_Cursor_Node          *next; OS_Curso
     struct { UI_BackgroundColor_Node *top; UI_BackgroundColor_Node *first_free; b32 auto_pop; } background_color_stack; \
     struct { UI_BorderColor_Node     *top; UI_BorderColor_Node     *first_free; b32 auto_pop; } border_color_stack; \
     struct { UI_TextColor_Node       *top; UI_TextColor_Node       *first_free; b32 auto_pop; } text_color_stack; \
-    struct { UI_Cursor_Node          *top; UI_Cursor_Node          *first_free; b32 auto_pop; } cursor_stack; \
+    struct { UI_Cursor_Node          *top; UI_Cursor_Node          *first_free; b32 auto_pop; } hover_cursor_stack; \
 }
 
 #define UI_StackPush(state,upper,lower,type,value)                  \
@@ -261,7 +261,7 @@ internal void ui_set_next_text_alignment(UI_Text_Align v);
 internal void ui_set_next_background_color(v4 v);
 internal void ui_set_next_border_color(v4 v);
 internal void ui_set_next_text_color(v4 v);
-internal void ui_set_next_cursor(OS_Cursor v);
+internal void ui_set_next_hover_cursor(OS_Cursor v);
 
 internal void ui_push_font(Face *v);
 internal void ui_push_parent(UI_Box *v);
@@ -277,7 +277,7 @@ internal void ui_push_text_alignment(UI_Text_Align v);
 internal void ui_push_background_color(v4 v);
 internal void ui_push_border_color(v4 v);
 internal void ui_push_text_color(v4 v);
-internal void ui_push_cursor(OS_Cursor v);
+internal void ui_push_hover_cursor(OS_Cursor v);
 
 internal void ui_pop_font();
 internal void ui_pop_parent();
@@ -293,7 +293,7 @@ internal void ui_pop_text_alignment();
 internal void ui_pop_background_color();
 internal void ui_pop_border_color();
 internal void ui_pop_text_color();
-internal void ui_pop_cursor();
+internal void ui_pop_hover_cursor();
 
 internal void ui_begin_frame(OS_Handle window_handle);
 internal void ui_end_frame();

@@ -207,11 +207,11 @@ internal UI_Box *ui_make_box(UI_Key key, UI_Box_Flags flags) {
     box->background_color = ui_state->background_color_stack.top->v;
     box->border_color = ui_state->border_color_stack.top->v;
     box->text_color = ui_state->text_color_stack.top->v;
-    box->cursor = ui_state->cursor_stack.top->v;
+    box->hover_cursor = ui_state->hover_cursor_stack.top->v;
 
     f32 animation_dt = ui_state->animation_dt;
 
-    f32 fast_rate = 10.f * animation_dt;
+    f32 fast_rate = animation_dt / 50.f;
     f32 hot_rate =  fast_rate;
     f32 active_rate =  fast_rate;
     box->view_offset.x += fast_rate * (box->view_offset_target.x - box->view_offset.x);
@@ -240,7 +240,7 @@ internal UI_Box *ui_make_box(UI_Key key, UI_Box_Flags flags) {
         if (ui_state->background_color_stack.auto_pop) { ui_pop_background_color(); }
         if (ui_state->border_color_stack.auto_pop) { ui_pop_border_color(); }
         if (ui_state->text_color_stack.auto_pop) { ui_pop_text_color(); }
-        if (ui_state->cursor_stack.auto_pop) { ui_pop_cursor(); }
+        if (ui_state->hover_cursor_stack.auto_pop) { ui_pop_hover_cursor(); }
     }
     return box;
 }
@@ -306,6 +306,18 @@ internal UI_Box *ui_make_box_from_stringf(UI_Box_Flags flags, char *fmt, ...) {
     va_end(args);
     UI_Box *box = ui_make_box_from_string(flags, string);
     return box;
+}
+
+internal void ui_set_focus_active_key(UI_Key key) {
+    ui_state->focus_active_box_key = key;
+}
+
+internal void ui_set_active_key(UI_Key key) {
+    ui_state->active_box_key = key;
+}
+
+internal void ui_set_hot_key(UI_Key key) {
+    ui_state->hot_box_key = key;
 }
 
 internal bool ui_key_focus_active_box_match(UI_Key key) {
@@ -651,7 +663,7 @@ internal void ui_begin_build(f32 animation_dt, OS_Handle window_handle, OS_Event
     ui_state->background_color_stack.top = NULL; ui_state->background_color_stack.first_free = NULL; ui_state->background_color_stack.auto_pop = false;
     ui_state->border_color_stack.top = NULL; ui_state->border_color_stack.first_free = NULL; ui_state->border_color_stack.auto_pop = false;
     ui_state->text_color_stack.top = NULL; ui_state->text_color_stack.first_free = NULL; ui_state->text_color_stack.auto_pop = false;
-    ui_state->cursor_stack.top = NULL; ui_state->cursor_stack.first_free = NULL; ui_state->cursor_stack.auto_pop = false;
+    ui_state->hover_cursor_stack.top = NULL; ui_state->hover_cursor_stack.first_free = NULL; ui_state->hover_cursor_stack.auto_pop = false;
 
     ui_push_font(default_fonts[FONT_DEFAULT]);
     ui_push_text_alignment(UI_TEXT_ALIGN_CENTER);
@@ -659,7 +671,7 @@ internal void ui_begin_build(f32 animation_dt, OS_Handle window_handle, OS_Event
     ui_push_background_color(V4(1.f, 1.f, 1.f, 1.f));
     ui_push_text_color(V4(.16f, .16f, .16f, 1.f));
     ui_push_border_color(V4(.2f, .2f, .2f, 1.f));
-    ui_push_cursor(OS_CURSOR_ARROW);
+    ui_push_hover_cursor(OS_CURSOR_ARROW);
     
     ui_state->build_counter = 0;
 
@@ -689,7 +701,7 @@ internal void ui_end_build() {
     UI_Box *active_box = ui_box_from_key(ui_state->active_box_key);
     UI_Box *focus_active_box = ui_box_from_key(ui_state->focus_active_box_key);
     if (hover_box) {
-        os_set_cursor(hover_box->cursor);
+        os_set_cursor(hover_box->hover_cursor);
     } else {
         os_set_cursor(OS_CURSOR_ARROW);
     }
@@ -728,7 +740,7 @@ internal void ui_set_next_text_alignment(UI_Text_Align v) { UI_StackSetNext(ui_s
 internal void ui_set_next_background_color(v4 v) { UI_StackSetNext(ui_state, BackgroundColor, background_color, v4, v); }
 internal void ui_set_next_border_color(v4 v) { UI_StackSetNext(ui_state, BorderColor, border_color, v4, v); }
 internal void ui_set_next_text_color(v4 v) { UI_StackSetNext(ui_state, TextColor, text_color, v4, v); }
-internal void ui_set_next_cursor(OS_Cursor v) { UI_StackSetNext(ui_state, Cursor, cursor, OS_Cursor, v); }
+internal void ui_set_next_hover_cursor(OS_Cursor v) { UI_StackSetNext(ui_state, Cursor, hover_cursor, OS_Cursor, v); }
 
 internal void ui_push_font(Face *v) { UI_StackPush(ui_state, Font, font, Face, v); }
 internal void ui_push_parent(UI_Box *v) { UI_StackPush(ui_state, Parent, parent, UI_Box, v); }
@@ -744,7 +756,7 @@ internal void ui_push_text_alignment(UI_Text_Align v) { UI_StackPush(ui_state, T
 internal void ui_push_background_color(v4 v) { UI_StackPush(ui_state, BackgroundColor, background_color, v4, v); }
 internal void ui_push_border_color(v4 v) { UI_StackPush(ui_state, BorderColor, border_color, v4, v); }
 internal void ui_push_text_color(v4 v) { UI_StackPush(ui_state, TextColor, text_color, v4, v); }
-internal void ui_push_cursor(OS_Cursor v) { UI_StackPush(ui_state, Cursor, cursor, OS_Cursor, v); }
+internal void ui_push_hover_cursor(OS_Cursor v) { UI_StackPush(ui_state, Cursor, hover_cursor, OS_Cursor, v); }
 
 internal void ui_pop_font()  { UI_StackPop(ui_state, Font, font); }
 internal void ui_pop_parent() { UI_StackPop(ui_state, Parent, parent); }
@@ -760,4 +772,4 @@ internal void ui_pop_text_alignment() { UI_StackPop(ui_state, TextAlignment, tex
 internal void ui_pop_background_color() { UI_StackPop(ui_state, BackgroundColor, background_color); }
 internal void ui_pop_border_color() { UI_StackPop(ui_state, BorderColor, border_color); }
 internal void ui_pop_text_color() { UI_StackPop(ui_state, TextColor, text_color); }
-internal void ui_pop_cursor() { UI_StackPop(ui_state, Cursor, cursor); }
+internal void ui_pop_hover_cursor() { UI_StackPop(ui_state, Cursor, hover_cursor); }

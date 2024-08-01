@@ -47,6 +47,7 @@ internal UI_BOX_CUSTOM_DRAW_PROC(ui_draw_line_edit) {
 }
 
 internal UI_Signal ui_line_edit(String8 name, void *buffer, u64 max_buffer_capacity, u64 *buffer_pos,  u64 *buffer_count) {
+    ui_set_next_hover_cursor(OS_CURSOR_IBEAM);
     UI_Box *box = ui_make_box_from_string(UI_BOX_CLICKABLE | UI_BOX_KEYBOARD_CLICKABLE |
          UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_BORDER | UI_BOX_DRAW_HOT_EFFECTS | UI_BOX_DRAW_ACTIVE_EFFECTS, name);
     UI_Signal signal = ui_signal_from_box(box);
@@ -98,7 +99,7 @@ internal UI_Signal ui_line_edit(String8 name, void *buffer, u64 max_buffer_capac
     return signal;
 }
 
-internal UI_Scroll_Pt ui_scroll_bar(String8 name, Axis2 axis, UI_Scroll_Pt scroll_pt, Rng_S64 view_rng, s64 view_indices) {
+internal UI_Scroll_Pt ui_scroll_bar(String8 name, Axis2 axis, UI_Size flip_axis_size, UI_Scroll_Pt scroll_pt, Rng_S64 view_rng, s64 view_indices) {
     UI_Scroll_Pt new_pt = scroll_pt;
     Axis2 flip_axis = axis_flip(axis);
 
@@ -106,46 +107,53 @@ internal UI_Scroll_Pt ui_scroll_bar(String8 name, Axis2 axis, UI_Scroll_Pt scrol
     f32 scroll_ratio = (f32)rng_s64_len(view_rng) / (f32)scroll_indices;
     
     ui_set_next_pref_size(axis, ui_pct(1.f, 0.f));
-    ui_set_next_pref_size(flip_axis, ui_px(20.f, 1.f));
+    ui_set_next_pref_size(flip_axis, flip_axis_size);
     ui_set_next_child_layout_axis(axis);
+    ui_set_next_hover_cursor(OS_CURSOR_HAND);
     UI_Box *container = ui_make_box_from_stringf(UI_BOX_DRAW_BACKGROUND, "###container_%s", name.data);
-    UI_Parent(container) {
+    UI_Parent(container)
         UI_PrefSize(flip_axis, ui_pct(1.f, 0.f)) {
-            ui_set_next_pref_size(axis, ui_text_dim(0.f, 1.f));
-            UI_Signal top_sig = ui_button(str8_lit("<###top_arrow"));
-            if (ui_clicked(top_sig) || ui_dragging(top_sig)) {
-                new_pt.idx -= 1;
-            }
+        ui_set_next_pref_size(axis, ui_text_dim(0.f, 1.f));
+        UI_Signal top_sig = ui_button(str8_lit("<###top_arrow"));
+        if (ui_clicked(top_sig) || ui_dragging(top_sig)) {
+            new_pt.idx -= 1;
+        }
 
-            ui_set_next_pref_size(axis, ui_pct(1.f, 0.f));
-            ui_set_next_pref_size(flip_axis, ui_pct(1.f, 1.f));
-            ui_set_next_background_color(V4(.24f, .25f, .25f, 1.f));
-            UI_Box *thumb_container = ui_make_box_from_stringf(UI_BOX_CLICKABLE | UI_BOX_DRAW_BACKGROUND, "###thumb_container", name.data);
-            v2 thumb_container_dim = rect_dim(thumb_container->rect);
+        ui_set_next_pref_size(axis, ui_pct(1.f, 0.f));
+        ui_set_next_background_color(V4(.24f, .25f, .25f, 1.f));
+        ui_set_next_hover_cursor(OS_CURSOR_HAND);
+        UI_Box *thumb_container = ui_make_box_from_stringf(UI_BOX_CLICKABLE | UI_BOX_DRAW_BACKGROUND, "###thumb_container", name.data);
+        v2 thumb_container_dim = rect_dim(thumb_container->rect);
             
-            UI_Signal scroll_sig = ui_signal_from_box(thumb_container);
+        UI_Signal scroll_sig = ui_signal_from_box(thumb_container);
 
-            if (ui_clicked(scroll_sig)) {
-                v2 scroll_pos = ui_mouse() - thumb_container->rect.p0;
-                new_pt.idx = (s64)(scroll_pos[axis] / (thumb_container_dim[axis] / (f32)view_indices));
-            }
+        if (ui_clicked(scroll_sig)) {
+            v2 scroll_pos = ui_mouse() - thumb_container->rect.p0;
+            new_pt.idx = (s64)(scroll_pos[axis] / (thumb_container_dim[axis] / (f32)view_indices));
+        }
 
-            f32 thumb_pos = thumb_container_dim[axis] * ((f32)scroll_pt.idx / (f32)scroll_indices);
-            ui_set_next_parent(thumb_container);
-            ui_set_next_fixed_xy(axis, thumb_pos);
-            ui_set_next_fixed_xy(flip_axis, 0.f);
-            ui_set_next_pref_size(axis, ui_pct(scroll_ratio, 0.f));
-            ui_set_next_background_color(V4(.4f, .4f, .4f, 1.f));
-            UI_Box *thumb_box = ui_make_box_from_stringf(UI_BOX_CLICKABLE | UI_BOX_DRAW_BACKGROUND, "###thumb", name.data);
-            UI_Signal thumb_sig = ui_signal_from_box(thumb_box);
+        f32 thumb_pos = thumb_container_dim[axis] * ((f32)scroll_pt.idx / (f32)scroll_indices);
+        ui_set_next_parent(thumb_container);
+        ui_set_next_fixed_xy(axis, thumb_pos);
+        ui_set_next_fixed_xy(flip_axis, 0.f);
+        ui_set_next_pref_size(axis, ui_pct(scroll_ratio, 0.f));
+        ui_set_next_background_color(V4(.4f, .4f, .4f, 1.f));
+        ui_set_next_hover_cursor(OS_CURSOR_HAND);
+        UI_Box *thumb_box = ui_make_box_from_stringf(UI_BOX_CLICKABLE | UI_BOX_DRAW_BACKGROUND | UI_BOX_DRAW_HOT_EFFECTS | UI_BOX_DRAW_ACTIVE_EFFECTS, "###thumb", name.data);
+        UI_Signal thumb_sig = ui_signal_from_box(thumb_box);
+        if (ui_dragging(thumb_sig)) {
+            v2 scroll_pos = ui_mouse() - thumb_container->rect.p0;
+            new_pt.idx = (s64)(scroll_pos[axis] / (thumb_container_dim[axis] / (f32)view_indices));
+        }
 
-            ui_set_next_pref_size(axis, ui_text_dim(0.f, 1.f));
-            UI_Signal bottom_sig = ui_button(str8_lit(">###bottom_arrow"));
-            if (ui_clicked(bottom_sig) || ui_dragging(bottom_sig)) {
-                new_pt.idx += 1;
-            }
+        ui_set_next_pref_size(axis, ui_text_dim(0.f, 1.f));
+        UI_Signal bottom_sig = ui_button(str8_lit(">###bottom_arrow"));
+        if (ui_clicked(bottom_sig) || ui_dragging(bottom_sig)) {
+            new_pt.idx += 1;
         }
     }
+
+    new_pt.idx = Clamp(new_pt.idx, 0, view_indices - 1);
 
     return new_pt;
 }
