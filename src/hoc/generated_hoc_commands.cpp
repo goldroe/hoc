@@ -1,5 +1,4 @@
 global Hoc_Command hoc_commands[] = {
-{ str8_lit("nil_command"), nil_command },
 { str8_lit("self_insert"), self_insert },
 { str8_lit("quit_hoc"), quit_hoc },
 { str8_lit("newline"), newline },
@@ -28,4 +27,6 @@ global Hoc_Command hoc_commands[] = {
 { str8_lit("copy"), copy },
 { str8_lit("paste"), paste },
 { str8_lit("find_file"), find_file },
+{ str8_lit("search_text"), search_text },
+{ str8_lit("nil_command"), nil_command },
 };
