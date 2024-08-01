@@ -99,7 +99,7 @@ internal void arena_pop_to(Arena *arena, u64 pos) {
     Arena *current = arena->current;
     while (current->base_pos > pos) {
         Arena *prev = current->prev;
-        arena_release(current);
+        current->allocator->release_procedure(current);
         current = prev;
     }
     Assert(current);
