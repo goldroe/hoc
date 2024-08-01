@@ -11,28 +11,48 @@ internal void modify_buffer(Hoc_Buffer *buffer) {
 }
 
 internal void write_buffer(Hoc_Buffer *buffer) {
-    // String8 buffer_string = buffer_to_string_apply_line_endings(buffer);
-    Arena *arena = make_arena(get_malloc_allocator());
-    String8 buffer_string = buffer_to_string(arena, buffer);
-    OS_Handle file_handle = os_open_file(buffer->file_name, OS_ACCESS_WRITE);
+    Arena *scratch = make_arena(get_virtual_allocator());
+    String8 full_path = path_join(scratch, buffer->file_path, buffer->file_name);
+    String8 buffer_string = buffer_to_string(scratch, buffer, true);
+    OS_Handle file_handle = os_open_file(full_path, OS_ACCESS_WRITE);
     if (os_valid_handle(file_handle)) {
         os_write_file(file_handle, buffer_string.data, buffer_string.count);
         os_close_handle(file_handle);
-    } else {
-        printf("Could not open file '%s'\n", buffer->file_name.data);
+        buffer->modified = false;
     }
-    arena_release(arena);
-    buffer->modified = false;
+    arena_release(scratch);
 }
 
-internal String8 buffer_to_string(Arena *arena, Hoc_Buffer *buffer) {
+internal String8 buffer_to_string(Arena *arena, Hoc_Buffer *buffer, bool apply_line_ends) {
+    s64 line_count = buffer_get_line_count(buffer);
     s64 buffer_length = buffer_get_length(buffer);
+    if (apply_line_ends) {
+        buffer_length += (line_count + 1)*(buffer->line_end == LINE_ENDING_CRLF); 
+    }
+
     String8 result{};
-    result.data = push_array(arena, u8, buffer_length + 1);
-    MemoryCopy(result.data, buffer->text, buffer->gap_start);
-    MemoryCopy(result.data + buffer->gap_start, buffer->text + buffer->gap_end, buffer->end - buffer->gap_end);
+    result.data = push_array_no_zero(arena, u8, buffer_length + 1);
     result.count = buffer_length;
-    result.data[buffer_length] = 0;
+    s64 str_idx = 0;
+    for (s64 line = 0; line < line_count; line += 1) {
+        s64 start = get_position_from_line(buffer, line);
+        s64 line_length = buffer_get_line_length(buffer, line);
+        s64 end = start + line_length;
+        for (s64 i = start; i < end; i += 1) {
+            result.data[str_idx++] = buffer_at(buffer, i);
+        }
+        if (apply_line_ends) {
+            if (buffer->line_end != LINE_ENDING_CR) {
+                if (buffer->line_end == LINE_ENDING_CRLF) result.data[str_idx++] = '\r';
+                result.data[str_idx++] = '\n';
+            } else {
+                result.data[str_idx++] = '\r';
+            }
+        } else {
+            result.data[str_idx++] = '\n';
+        }
+    }
+    result.data[str_idx] = 0;
     return result;
 }
 
@@ -46,54 +66,6 @@ internal String8 buffer_to_string_range(Arena *arena, Hoc_Buffer *buffer, Rng_S6
     }
     result.data[count] = 0;
     return result;
-}
-
-internal String8 buffer_to_string_span(Hoc_Buffer *buffer, Span span) {
-    String8 result{};
-    s64 span_length = span.end - span.start;
-    Assert(span.start >= 0 && span.end >= 0);
-    Assert(span_length >= 0);
-    if (span.end < buffer_get_length(buffer)) {
-        result.data = (u8 *)malloc(span_length + 1);
-        result.data[span_length] = 0;
-        for (s64 i = 0; i < span_length; i++) {
-            result.data[i] = buffer_at(buffer, span.start + i);
-        }
-    }
-    result.count = span_length;
-    return result;
-}
-
-internal String8 buffer_to_string_apply_line_endings(Hoc_Buffer *buffer) {
-    s64 buffer_length = buffer_get_length(buffer); // @todo wrong?
-    s64 new_buffer_length = buffer_length + ((buffer->line_ending == LINE_ENDING_CRLF) ? buffer_get_line_count(buffer) : 0);
-    String8 buffer_string;
-    buffer_string.data = (u8 *)malloc(new_buffer_length + 1);
-    buffer_string.count = new_buffer_length;
-    u8 *dest = buffer_string.data;
-    for (s64 position = 0; position < buffer_length; position++) {
-        u8 c = buffer_at(buffer, position);
-        Assert(c >= 0 && c <= 127);
-        if (c == '\n') {
-            switch (buffer->line_ending) {
-            case LINE_ENDING_LF:
-                *dest++ = '\n';
-                break;
-            case LINE_ENDING_CR:
-                *dest++ = '\r';
-                break;
-            case LINE_ENDING_CRLF:
-                *dest++ = '\r';
-                *dest++ = '\n';
-                break;
-            }
-        } else {
-            *dest++ = c;
-        }
-    }
-    *dest = 0;
-    buffer_string.count = dest - buffer_string.data;
-    return buffer_string;
 }
 
 internal s64 buffer_get_line_length(Hoc_Buffer *buffer, s64 line) {
@@ -140,7 +112,7 @@ internal void remove_crlf(u8 *data, s64 count, u8 **out_data, u64 *out_count) {
     if (out_count) *out_count = new_count;
 }
 
-internal Line_Ending detect_line_ending(String8 string) {
+internal Line_End detect_line_ending(String8 string) {
     for (u64 i = 0; i < string.count; i++) {
         switch (string.data[i]) {
         case '\r':
@@ -164,7 +136,7 @@ internal void buffer_init_contents(Hoc_Buffer *buffer, String8 file_name, String
     buffer->gap_start = 0;
     buffer->gap_end = 0;
     buffer->end = string.count;
-    buffer->line_ending = LINE_ENDING_LF;
+    buffer->line_end = LINE_ENDING_LF;
     buffer_update_line_starts(buffer);
 }
 
@@ -178,21 +150,21 @@ internal Hoc_Buffer *make_buffer(String8 file_name) {
         Assert(file_data);
 
         String8 buffer_string = {file_data, file_size};
-        Line_Ending line_ending = detect_line_ending(buffer_string);
-        if (line_ending != LINE_ENDING_LF) {
+        Line_End line_end = detect_line_ending(buffer_string);
+        if (line_end != LINE_ENDING_LF) {
             String8 adjusted{};
             remove_crlf(buffer_string.data, buffer_string.count, &adjusted.data, &adjusted.count);
             free(file_data);
             buffer_string = adjusted;
         }
         buffer_init_contents(buffer, file_name, buffer_string);
-        buffer->line_ending = line_ending;
+        buffer->line_end = line_end;
     } else {
         String8 string = str8_zero();
         string.data = (u8 *)malloc(buffer->end);
         string.count = DEFAULT_GAP_SIZE;
         buffer_init_contents(buffer, file_name, string);
-        buffer->line_ending = LINE_ENDING_LF;
+        buffer->line_end = LINE_ENDING_LF;
     }
     
     DLLPushBack(hoc_app->buffers.first, hoc_app->buffers.last, buffer, next, prev);
@@ -379,4 +351,43 @@ internal Cursor get_cursor_from_line(Hoc_Buffer *buffer, s64 line) {
     s64 position = get_position_from_line(buffer, line);
     Cursor cursor = get_cursor_from_position(buffer, position);
     return cursor;
+}
+
+internal s64 buffer_indentation_from_line(Hoc_Buffer *buffer, s64 line) {
+    s64 result = 0;
+    s64 start = get_position_from_line(buffer, line);
+    for (s64 i = start, end = start + buffer_get_line_length(buffer, line); i < end; i += 1) {
+        if (buffer_at(buffer, i) != ' ') {
+            break;
+        }
+        result += 1;
+    }
+    return result;
+}
+
+internal Auto_Array<Rng_S64> buffer_find_text_matches(Hoc_Buffer *buffer, String8 string) {
+    Auto_Array<Rng_S64> match_ranges;
+
+    for (s64 i = 0, length = buffer_get_length(buffer); i < length; i++) {
+        u64 rem = length - i;
+        if (rem < string.count) {
+            break;
+        }
+        
+        if (buffer_at(buffer, i) == string.data[0]) {
+            bool matches = true;
+            for (u64 j = 0; j < string.count; j++) {
+                if (buffer_at(buffer, i + j) != string.data[j]) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) {
+                Rng_S64 rng = rng_s64(i, i + string.count);
+                match_ranges.push(rng);
+            }
+        }
+    }
+
+    return match_ranges;
 }

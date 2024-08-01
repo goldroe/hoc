@@ -4,7 +4,7 @@
 typedef u32 Editor_ID;
 typedef u32 Buffer_ID;
 
-enum Line_Ending {
+enum Line_End {
     LINE_ENDING_NONE,
     LINE_ENDING_LF,
     LINE_ENDING_CR,
@@ -15,11 +15,6 @@ struct Cursor {
     s64 position;
     s64 line;
     s64 col;
-};
-
-struct Span {
-    s64 start;
-    s64 end;
 };
 
 struct Hoc_Buffer {
@@ -38,7 +33,7 @@ struct Hoc_Buffer {
 
     b32 modified;
     
-    Line_Ending line_ending;
+    Line_End line_end;
     Auto_Array<s64> line_starts;
 };
 
@@ -61,9 +56,7 @@ internal Cursor get_cursor_from_position(Hoc_Buffer *buffer, s64 position);
 internal s64 get_position_from_line(Hoc_Buffer *buffer, s64 line);
 internal Cursor get_cursor_from_line(Hoc_Buffer *buffer, s64 line);
 
-internal String8 buffer_to_string(Arena *arena, Hoc_Buffer *buffer);
-internal String8 buffer_to_string_apply_line_endings(Hoc_Buffer *buffer);
-internal String8 buffer_to_string_span(Hoc_Buffer *buffer, Span span);
+internal String8 buffer_to_string(Arena *arena, Hoc_Buffer *buffer, bool apply_line_ends);
 
 internal void buffer_record_insert(Hoc_Buffer *buffer, s64 position, String8 text);
 internal void buffer_record_delete(Hoc_Buffer *buffer, s64 start, s64 end);

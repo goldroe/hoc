@@ -11,6 +11,7 @@ struct Hoc_Editor {
     Cursor cursor;
     b32 mark_active;
     Cursor mark;
+    s64 pref_col;
     b32 modified;
 };
 

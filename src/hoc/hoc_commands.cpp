@@ -9,11 +9,15 @@ HOC_COMMAND(self_insert) {
             s64 end = editor->cursor.position < editor->mark.position ? editor->mark.position : editor->cursor.position;
             buffer_replace_region(editor->buffer, text_input, start, end);
             editor->mark_active = false;
-            editor_set_cursor(editor, get_cursor_from_position(editor->buffer, start));
+            Cursor cursor = get_cursor_from_position(editor->buffer, start);
+            editor_set_cursor(editor, cursor);
+            ensure_cursor_in_view(view, cursor);
         } else {
             buffer_insert_string(editor->buffer, editor->cursor.position, text_input);
             // buffer_record_insert(editor->buffer, editor->cursor.position, text_input);
-            editor_set_cursor(editor, get_cursor_from_position(editor->buffer, editor->cursor.position + text_input.count));
+            Cursor cursor = get_cursor_from_position(editor->buffer, editor->cursor.position + text_input.count);
+            editor_set_cursor(editor, cursor);
+            ensure_cursor_in_view(view, cursor);
         }
         // if (editor->buffer->post_self_insert_hook) editor->buffer->post_self_insert_hook(text_input);
     }
@@ -26,12 +30,20 @@ HOC_COMMAND(quit_hoc) {
 HOC_COMMAND(newline) {
     Assert(view->type == GUI_VIEW_EDITOR);
     Hoc_Editor *editor = view->editor.editor;
-    Cursor cursor = editor->cursor;
-    buffer_insert_single(editor->buffer, cursor.position, '\n');
-    cursor.position++;
-    cursor.col = 0;
-    cursor.line++;
+    Cursor prev_cursor = editor->cursor;
+    s64 indent = buffer_indentation_from_line(editor->buffer, prev_cursor.line);
+    buffer_insert_single(editor->buffer, prev_cursor.position, '\n');
+
+    //@Note add previous line indentation
+    s64 pos = prev_cursor.position + 1;
+    for (s64 i = 0; i < indent; i++) {
+        buffer_insert_single(editor->buffer, pos, ' ');
+        pos += 1;
+    }
+    
+    Cursor cursor = get_cursor_from_position(editor->buffer, pos);
     editor_set_cursor(editor, cursor);
+    ensure_cursor_in_view(view, cursor);
 }
 
 HOC_COMMAND(backward_char) {
@@ -40,6 +52,7 @@ HOC_COMMAND(backward_char) {
     if (editor->cursor.position > 0) {
         Cursor cursor = get_cursor_from_position(editor->buffer, editor->cursor.position - 1);
         editor_set_cursor(editor, cursor);
+        ensure_cursor_in_view(view, cursor);
     }
 }
 
@@ -49,6 +62,7 @@ HOC_COMMAND(forward_char) {
     if (editor->cursor.position < buffer_get_length(editor->buffer)) {
         Cursor cursor = get_cursor_from_position(editor->buffer, editor->cursor.position + 1);
         editor_set_cursor(editor, cursor);
+        ensure_cursor_in_view(view, cursor);
     }
 }
 
@@ -74,7 +88,9 @@ HOC_COMMAND(forward_word) {
         }
     }
 
-    editor_set_cursor(editor, get_cursor_from_position(editor->buffer, position));
+    Cursor cursor = get_cursor_from_position(editor->buffer, position);
+    editor_set_cursor(editor, cursor);
+    ensure_cursor_in_view(view, cursor);
 }
 
 HOC_COMMAND(backward_word) {
@@ -98,7 +114,9 @@ HOC_COMMAND(backward_word) {
             break;
         }
     }
-    editor_set_cursor(editor, get_cursor_from_position(editor->buffer, position));
+    Cursor cursor = get_cursor_from_position(editor->buffer, position);
+    editor_set_cursor(editor, cursor);
+    ensure_cursor_in_view(view, cursor);
 }
 
 HOC_COMMAND(backward_paragraph) {
@@ -116,7 +134,9 @@ HOC_COMMAND(backward_paragraph) {
             }
         }
         if (blank_line) {
-            editor_set_cursor(editor, get_cursor_from_position(editor->buffer, start));
+            Cursor cursor = get_cursor_from_position(editor->buffer, start);
+            editor_set_cursor(editor, cursor);
+            ensure_cursor_in_view(view, cursor);
             break;
         }
     }
@@ -137,7 +157,9 @@ HOC_COMMAND(forward_paragraph) {
             }
         }
         if (blank_line) {
-            editor_set_cursor(editor, get_cursor_from_position(editor->buffer, start));
+            Cursor cursor = get_cursor_from_position(editor->buffer, start);
+            editor_set_cursor(editor, cursor);
+            ensure_cursor_in_view(view, cursor);
             break;
         }
     }    
@@ -147,9 +169,14 @@ HOC_COMMAND(previous_line) {
     Assert(view->type == GUI_VIEW_EDITOR);
     Hoc_Editor *editor = view->editor.editor;
     if (editor->cursor.line > 0) {
-        s64 position = get_position_from_line(editor->buffer, editor->cursor.line - 1);
+        s64 line = editor->cursor.line - 1; 
+        s64 col = Clamp(editor->pref_col, 0, buffer_get_line_length(editor->buffer, line));
+        s64 position = get_position_from_line(editor->buffer, line) + col;
         Cursor cursor = get_cursor_from_position(editor->buffer, position);
+        s64 pref_col = editor->pref_col;
         editor_set_cursor(editor, cursor);
+        ensure_cursor_in_view(view, cursor);
+        editor->pref_col = pref_col;
     }
 }
 
@@ -157,30 +184,33 @@ HOC_COMMAND(next_line) {
     Assert(view->type == GUI_VIEW_EDITOR);
     Hoc_Editor *editor = view->editor.editor;
     if (editor->cursor.line < buffer_get_line_count(editor->buffer) - 1) {
-        s64 position = get_position_from_line(editor->buffer, editor->cursor.line + 1);
+        s64 line = editor->cursor.line + 1; 
+        s64 col = Clamp(editor->pref_col, 0, buffer_get_line_length(editor->buffer, line));
+        s64 position = get_position_from_line(editor->buffer, line) + col;
         Cursor cursor = get_cursor_from_position(editor->buffer, position);
+        s64 pref_col = editor->pref_col;
         editor_set_cursor(editor, cursor);
+        ensure_cursor_in_view(view, cursor);
+        editor->pref_col = pref_col;
     }
 }
 
 HOC_COMMAND(page_up) {
     GUI_Editor *gui_editor = &view->editor;
     Hoc_Editor *editor = gui_editor->editor;
-    s64 prev_line = editor->cursor.line;
-    editor_move_lines(editor, -20);
-    s64 lines_moved = editor->cursor.line - prev_line;
-    view->scroll_pos.y.idx += lines_moved;
-    // gui_editor->box->view_offset_target.y = -editor->cursor.line * gui_editor->editor->face->glyph_height;
+    v2 code_area_dim = rect_dim(gui_editor->box->rect);
+    s64 viewable_lines = (s64)ceil(code_area_dim.y / gui_editor->box->font->glyph_height);
+    editor_move_lines(editor, -viewable_lines);
+    view->scroll_pos.y.idx = editor->cursor.line;
 }
 
 HOC_COMMAND(page_down) {
     GUI_Editor *gui_editor = &view->editor;
     Hoc_Editor *editor = gui_editor->editor;
-    s64 prev_line = editor->cursor.line;
-    editor_move_lines(editor, 20);
-    s64 lines_moved = editor->cursor.line - prev_line;
-    view->scroll_pos.y.idx += lines_moved;
-    // gui_editor->box->view_offset_target.y = -editor->cursor.line * gui_editor->editor->face->glyph_height;
+    v2 code_area_dim = rect_dim(gui_editor->box->rect);
+    s64 viewable_lines = (s64)ceil(code_area_dim.y / gui_editor->box->font->glyph_height);
+    editor_move_lines(editor, viewable_lines);
+    view->scroll_pos.y.idx = editor->cursor.line;
 }
 
 HOC_COMMAND(backward_delete_char) {
@@ -191,7 +221,9 @@ HOC_COMMAND(backward_delete_char) {
             Cursor start = editor->mark.position < editor->cursor.position ? editor->mark : editor->cursor;
             Cursor end = editor->mark.position < editor->cursor.position ? editor->cursor : editor->mark;
             buffer_delete_region(editor->buffer, start.position, end.position);
-            editor_set_cursor(editor, get_cursor_from_position(editor->buffer, start.position));
+            Cursor cursor = get_cursor_from_position(editor->buffer, start.position);
+            editor_set_cursor(editor, cursor);
+            ensure_cursor_in_view(view, cursor);
         }
         editor->mark_active = false;
     } else if (editor->cursor.position > 0) {
@@ -199,6 +231,7 @@ HOC_COMMAND(backward_delete_char) {
         buffer_delete_single(editor->buffer, editor->cursor.position);
         Cursor cursor = get_cursor_from_position(editor->buffer, editor->cursor.position - 1);
         editor_set_cursor(editor, cursor);
+        ensure_cursor_in_view(view, cursor);
     }
 }
 
@@ -210,7 +243,9 @@ HOC_COMMAND(forward_delete_char) {
             Cursor start = editor->mark.position < editor->cursor.position ? editor->mark : editor->cursor;
             Cursor end = editor->mark.position < editor->cursor.position ? editor->cursor : editor->mark;
             buffer_delete_region(editor->buffer, start.position, end.position);
-            editor_set_cursor(editor, get_cursor_from_position(editor->buffer, start.position));
+            Cursor cursor = get_cursor_from_position(editor->buffer, start.position);
+            editor_set_cursor(editor, cursor);
+            ensure_cursor_in_view(view, cursor);
         }
         editor->mark_active = false;
     } else if (editor->cursor.position < buffer_get_length(editor->buffer)) {
@@ -218,6 +253,7 @@ HOC_COMMAND(forward_delete_char) {
         buffer_delete_single(editor->buffer, editor->cursor.position + 1);
         Cursor cursor = get_cursor_from_position(editor->buffer, editor->cursor.position);
         editor_set_cursor(editor, cursor);
+        ensure_cursor_in_view(view, cursor);
     }
 }
 
@@ -247,7 +283,9 @@ HOC_COMMAND(backward_delete_word) {
 
     // buffer_record_delete(editor->buffer, position, editor->cursor.position);
     buffer_delete_region(editor->buffer, position, editor->cursor.position);
-    editor_set_cursor(editor, get_cursor_from_position(editor->buffer, position));
+    Cursor cursor = get_cursor_from_position(editor->buffer, position);
+    editor_set_cursor(editor, cursor);
+    ensure_cursor_in_view(view, cursor);
 }
 
 HOC_COMMAND(forward_delete_word) {
@@ -276,7 +314,9 @@ HOC_COMMAND(forward_delete_word) {
 
     // buffer_record_delete(editor->buffer, editor->cursor.position, position);
     buffer_delete_region(editor->buffer, editor->cursor.position, position);
-    editor_set_cursor(editor, get_cursor_from_position(editor->buffer, editor->cursor.position));
+    Cursor cursor = get_cursor_from_position(editor->buffer, editor->cursor.position);
+    editor_set_cursor(editor, cursor);
+    ensure_cursor_in_view(view, cursor);
 }
 
 HOC_COMMAND(kill_line) {
@@ -287,6 +327,7 @@ HOC_COMMAND(kill_line) {
     if (end - start == 0) end += 1;
     buffer_delete_region(editor->buffer, start, end);
     editor_set_cursor(editor, editor->cursor);
+    ensure_cursor_in_view(view, editor->cursor);
 }
 
 HOC_COMMAND(open_line) {
@@ -294,7 +335,9 @@ HOC_COMMAND(open_line) {
     Hoc_Editor *editor = view->editor.editor;
     s64 line_begin = get_position_from_line(editor->buffer, editor->cursor.line + 1);
     buffer_insert_single(editor->buffer, line_begin, '\n');
-    editor_set_cursor(editor, get_cursor_from_line(editor->buffer, editor->cursor.line + 1));
+    Cursor cursor = get_cursor_from_line(editor->buffer, editor->cursor.line + 1);
+    editor_set_cursor(editor, cursor);
+    ensure_cursor_in_view(view, cursor);
 }
 
 HOC_COMMAND(save_buffer) {
@@ -314,26 +357,34 @@ HOC_COMMAND(goto_beginning_of_line) {
     Assert(view->type == GUI_VIEW_EDITOR);
     Hoc_Editor *editor = view->editor.editor;
     s64 position = get_position_from_line(editor->buffer, editor->cursor.line);
-    editor_set_cursor(editor, get_cursor_from_position(editor->buffer, position));
+    Cursor cursor = get_cursor_from_position(editor->buffer, position);
+    editor_set_cursor(editor, cursor);
+    ensure_cursor_in_view(view, cursor);
 }
 
 HOC_COMMAND(goto_end_of_line) {
     Assert(view->type == GUI_VIEW_EDITOR);
     Hoc_Editor *editor = view->editor.editor;
     s64 position = get_position_from_line(editor->buffer, editor->cursor.line) + buffer_get_line_length(editor->buffer, editor->cursor.line);
-    editor_set_cursor(editor, get_cursor_from_position(editor->buffer, position));
+    Cursor cursor = get_cursor_from_position(editor->buffer, position);
+    editor_set_cursor(editor, cursor);
+    ensure_cursor_in_view(view, cursor);
 }
 
 HOC_COMMAND(goto_first_line) {
     Assert(view->type == GUI_VIEW_EDITOR);
     Hoc_Editor *editor = view->editor.editor;
-    editor_set_cursor(editor, get_cursor_from_position(editor->buffer, 0));
+    Cursor cursor = get_cursor_from_position(editor->buffer, 0);
+    editor_set_cursor(editor, cursor);
+    ensure_cursor_in_view(view, cursor);
 }
 
 HOC_COMMAND(goto_last_line) {
     Assert(view->type == GUI_VIEW_EDITOR);
     Hoc_Editor *editor = view->editor.editor;
-    editor_set_cursor(editor, get_cursor_from_position(editor->buffer, buffer_get_length(editor->buffer)));
+    Cursor cursor = get_cursor_from_position(editor->buffer, buffer_get_length(editor->buffer));
+    editor_set_cursor(editor, cursor);
+    ensure_cursor_in_view(view, cursor);
 }
 
 HOC_COMMAND(copy) {
@@ -352,7 +403,9 @@ HOC_COMMAND(paste) {
     Arena *scratch = make_arena(get_malloc_allocator());
     String8 string = os_get_clipboard_text(scratch);
     buffer_insert_string(editor->buffer, editor->cursor.position, string);
-    editor_set_cursor(editor, get_cursor_from_position(editor->buffer, editor->cursor.position + string.count));
+    Cursor cursor = get_cursor_from_position(editor->buffer, editor->cursor.position + string.count);
+    editor_set_cursor(editor, cursor);
+    ensure_cursor_in_view(view, cursor);
     arena_release(scratch);
 }
 
@@ -371,11 +424,11 @@ HOC_COMMAND(find_file) {
     gui_file_system_load_path(fs, current_path);
 }
 
-
-
-
-
-
+HOC_COMMAND(search_text) {
+    GUI_Editor *gui_editor = &view->editor;
+    gui_editor->searching = true;
+    gui_editor->search_cursor = gui_editor->editor->cursor;
+}
 
 HOC_COMMAND(nil_command) {
 }
