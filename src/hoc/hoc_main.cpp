@@ -1,3 +1,9 @@
+//@Todo Allow UI to have transient objects that don't need to be "keyed"
+//@Todo Fixup the filesystem view (add borders and a scrollbar)
+//@Todo Fixup the rectangle draw batching
+//@Todo Simple syntax highlighting
+//@Todo Text searching
+
 #include <ft2build.h>
 #include <freetype/freetype.h>
 
@@ -47,11 +53,9 @@
 #include "hoc/hoc_app.cpp"
 #include "hoc/hoc_buffer.cpp"
 #include "hoc/hoc_editor.cpp"
+#include "gui/gui.cpp"
 #include "hoc/hoc_commands.cpp"
 #include "hoc/generated_hoc_commands.cpp"
-#include "gui/gui.cpp"
-
-global s64 performance_frequency;
 
 global Arena *win32_event_arena;
 global OS_Event_List win32_events;
@@ -292,18 +296,8 @@ internal LRESULT CALLBACK window_proc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM
     return result;
 }
 
-internal inline s64 get_wall_clock() {
-    LARGE_INTEGER result;
-    QueryPerformanceCounter(&result);
-    return (s64)result.QuadPart;
-}
-
-internal inline f32 get_seconds_elapsed(s64 start, s64 end) {
-    f32 result = ((f32)(end - start) / (f32)performance_frequency);
-    return result;
-}
-
 internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handle, f32 dt) {
+
     ui_begin_build(dt, window_handle, os_events);
 
     v2 window_dim = os_get_window_dim(window_handle);
@@ -319,7 +313,7 @@ internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handl
 
     UI_Parent(main_body)
         UI_TextColor(V4(.92f, .86f, .7f, 1.f))
-        UI_BackgroundColor(V4(.16f, .16f, .16f, 1.f))
+        UI_BackgroundColor(V4(.2f, .19f, .18f, 1.f))
         UI_BorderColor(V4(.2f, .19f, .18f, 1.f))
     {
         GUI_View_List *views = &hoc_app->gui_views;
@@ -338,14 +332,60 @@ internal void update_and_render(OS_Event_List *os_events, OS_Handle window_handl
         }
     }
 
+
     ui_layout_apply(ui_root());
     draw_ui_layout(ui_root());
 
     ui_end_build();
 }
 
+#ifdef OS_WINDOWS
+#include <shellapi.h>
+#pragma comment(lib, "Shell32")
+
+void get_command_line_args(int *argc, char ***argv) {
+    // Get the command line arguments as wchar_t strings
+    wchar_t ** wargv = CommandLineToArgvW(GetCommandLineW(), argc);
+    if (!wargv) { *argc = 0; *argv = NULL; return; }
+  
+    // Count the number of bytes necessary to store the UTF-8 versions of those strings
+    int n = 0;
+    for (int i = 0;  i < *argc;  i++)
+        n += WideCharToMultiByte( CP_UTF8, 0, wargv[i], -1, NULL, 0, NULL, NULL ) + 1;
+  
+    // Allocate the argv[] array + all the UTF-8 strings
+    *argv = (char **)malloc( (*argc + 1) * sizeof(char *) + n );
+    if (!*argv) { *argc = 0; return; }
+  
+    // Convert all wargv[] --> argv[]
+    char * arg = (char *)&((*argv)[*argc + 1]);
+    for (int i = 0;  i < *argc;  i++)
+    {
+        (*argv)[i] = arg;
+        arg += WideCharToMultiByte( CP_UTF8, 0, wargv[i], -1, arg, n, NULL, NULL ) + 1;
+    }
+    (*argv)[*argc] = NULL;
+}
+#endif
+
+int main_entry_point(int argc, char **argv);
+
+#if defined HOC_ENTRY_WIN32
+int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd) {
+    int arg_count;
+    char **arguments;
+    get_command_line_args(&arg_count, &arguments);
+    main_entry_point(arg_count, arguments);
+}
+#else
 int main(int argc, char **argv) {
-    int target_frames_per_second = 75;
+    main_entry_point(argc, argv);
+}
+#endif
+
+
+int main_entry_point(int argc, char **argv) {
+    int target_frames_per_second = 60;
     int target_ms_per_frame = (int)(1000.f / (f32)target_frames_per_second);
     
     argc--; argv++;
@@ -375,7 +415,7 @@ int main(int argc, char **argv) {
         file_name = str8_concat(arg_arena, current_directory, file_name);
     }
 
-    QueryPerformanceFrequency((LARGE_INTEGER *)&performance_frequency);
+    QueryPerformanceFrequency((LARGE_INTEGER *)&win32_performance_frequency);
     timeBeginPeriod(1);
 
 #define CLASSNAME "HOC_WINDOW_CLASS"
@@ -403,8 +443,8 @@ int main(int argc, char **argv) {
     hoc_app = make_hoc_application();
     ui_set_state(ui_state_new());
 
-    default_fonts[FONT_DEFAULT] = load_font_face(str8_lit("fonts/DejaVuSansMono.ttf"), 14);
-    default_fonts[FONT_CODE] = load_font_face(str8_lit("fonts/DejaVuSansMono.ttf"), 14);
+    default_fonts[FONT_DEFAULT] = load_font_face(str8_lit("fonts/LiberationMono.ttf"), 14);
+    default_fonts[FONT_CODE] = load_font_face(str8_lit("fonts/LiberationMono.ttf"), 14);
 
     key_map_arena = make_arena(get_malloc_allocator());
     default_key_map = load_key_map(key_map_arena, str8_lit("data/bindings.hoc"));
@@ -420,6 +460,7 @@ int main(int argc, char **argv) {
     
     f32 dt = 0.0f;
     srand((s32)get_wall_clock());
+
     s64 start_clock, last_clock;
     start_clock = last_clock = get_wall_clock(); 
 
@@ -459,14 +500,14 @@ int main(int argc, char **argv) {
         draw_end();
 
         s64 work_clock = get_wall_clock();
-        int work_ms_elapsed = (int)(1000.0f * get_seconds_elapsed(last_clock, work_clock));
-        if (work_ms_elapsed < target_ms_per_frame) {
-            DWORD sleep_ms = target_ms_per_frame - work_ms_elapsed;
+        f32 work_ms_elapsed = get_ms_elapsed(last_clock, work_clock);
+        if ((int)work_ms_elapsed < target_ms_per_frame) {
+            DWORD sleep_ms = target_ms_per_frame - (int)work_ms_elapsed;
             Sleep(sleep_ms);
         }
 
         s64 end_clock = get_wall_clock();
-        dt = get_seconds_elapsed(last_clock, end_clock);
+        dt = get_ms_elapsed(last_clock, end_clock);
         #if 0
         printf("DT: %f\n", dt);
         #endif
