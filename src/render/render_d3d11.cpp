@@ -258,7 +258,7 @@ internal void d3d11_render(OS_Handle window_handle, Draw_Bucket *draw_bucket) {
         {
             int vertices_count = batch.bytes / sizeof(R_2D_Vertex);
             R_2D_Vertex *vertices = (R_2D_Vertex *)batch.v;
-            if (vertices_count == 0) return;
+            if (vertices_count == 0) continue;
 
             void *tex = params.ui.tex;
             if (tex == nullptr) {
